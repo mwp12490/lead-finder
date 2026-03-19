@@ -48,9 +48,11 @@
         .btn-sm { padding: 0.4rem 0.8rem; font-size: 0.8rem; }
         .btn-danger { background: #e74c3c; color: white; }
         .btn-danger:hover { background: #c0392b; }
+        .btn-success { background: #27ae60; color: white; }
+        .btn-success:hover { background: #1e8449; }
 
         /* Tabs */
-        .tabs { display: flex; gap: 0; margin: 1.5rem auto 0; max-width: 1200px; }
+        .tabs { display: flex; gap: 0; margin: 1.5rem auto 0; max-width: 1200px; flex-wrap: wrap; }
         .tab { padding: 0.75rem 1.5rem; background: white; border: none; cursor: pointer; font-weight: 600; color: #888; font-size: 0.95rem; border-bottom: 3px solid transparent; transition: all 0.3s; font-family: Inter, sans-serif; }
         .tab.active { color: #1B4F72; border-bottom-color: #E67E22; }
         .tab:hover { color: #1B4F72; }
@@ -64,10 +66,13 @@
         .lead-card { background: white; border-radius: 8px; padding: 1.25rem; box-shadow: 0 2px 8px rgba(27,79,114,0.08); border-left: 4px solid #2E86C1; transition: all 0.3s; position: relative; }
         .lead-card:hover { box-shadow: 0 4px 16px rgba(27,79,114,0.15); transform: translateY(-2px); }
         .lead-card.saved { border-left-color: #27ae60; }
-        .lead-card h3 { font-family: Poppins, sans-serif; font-size: 1rem; color: #1B4F72; margin-bottom: 0.25rem; padding-right: 2rem; }
+        .lead-card.duplicate { border-left-color: #f39c12; }
+        .lead-card h3 { font-family: Poppins, sans-serif; font-size: 1rem; color: #1B4F72; margin-bottom: 0.25rem; padding-right: 4rem; }
         .lead-card .category-tag { font-size: 0.75rem; color: white; background: #2E86C1; padding: 0.15rem 0.6rem; border-radius: 3px; display: inline-block; margin-bottom: 0.5rem; }
         .lead-card .info-row { font-size: 0.85rem; color: #555; margin-bottom: 0.2rem; display: flex; align-items: center; gap: 0.4rem; }
         .lead-card .info-row .label { font-weight: 600; color: #1B4F72; min-width: 60px; }
+        .lead-card .info-row a { color: #2E86C1; text-decoration: none; }
+        .lead-card .info-row a:hover { text-decoration: underline; }
         .lead-card .signals { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.75rem 0; }
         .signal { font-size: 0.75rem; padding: 0.2rem 0.6rem; border-radius: 4px; font-weight: 600; }
         .signal-good { background: #E8F8F5; color: #1E8449; }
@@ -78,6 +83,45 @@
         .lead-card .save-btn:hover, .lead-card .save-btn.saved { opacity: 1; }
         .lead-card .notes-area { margin-top: 0.75rem; }
         .lead-card .notes-area textarea { width: 100%; padding: 0.5rem; border: 1px solid #D6EAF8; border-radius: 4px; font-size: 0.85rem; font-family: Inter, sans-serif; resize: vertical; min-height: 60px; }
+
+        /* Score badge */
+        .score-badge { position: absolute; top: 1rem; right: 3rem; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.8rem; color: white; font-family: Poppins, sans-serif; }
+        .score-hot { background: #e74c3c; }
+        .score-warm { background: #f39c12; }
+        .score-cold { background: #27ae60; }
+
+        /* Duplicate badge */
+        .dup-badge { font-size: 0.7rem; background: #f39c12; color: white; padding: 0.15rem 0.5rem; border-radius: 3px; font-weight: 600; margin-left: 0.5rem; }
+
+        /* Status dropdown */
+        .status-row { margin-top: 0.75rem; display: flex; align-items: center; gap: 0.5rem; }
+        .status-row label { font-size: 0.8rem; font-weight: 600; color: #1B4F72; }
+        .status-row select { padding: 0.3rem 0.5rem; border: 1.5px solid #D6EAF8; border-radius: 4px; font-size: 0.8rem; font-family: Inter, sans-serif; }
+
+        /* Pipeline kanban */
+        .pipeline-container { display: flex; gap: 1rem; overflow-x: auto; padding: 1rem 0; min-height: 300px; }
+        .pipeline-column { min-width: 220px; flex: 1; background: #EBF5FB; border-radius: 8px; padding: 0.75rem; }
+        .pipeline-column h4 { font-family: Poppins, sans-serif; font-size: 0.85rem; color: #1B4F72; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 2px solid #D6EAF8; display: flex; justify-content: space-between; align-items: center; }
+        .pipeline-column h4 .col-count { background: #1B4F72; color: white; font-size: 0.7rem; padding: 0.1rem 0.5rem; border-radius: 10px; }
+        .pipeline-card { background: white; border-radius: 6px; padding: 0.75rem; margin-bottom: 0.5rem; box-shadow: 0 1px 4px rgba(27,79,114,0.1); cursor: default; }
+        .pipeline-card h5 { font-family: Poppins, sans-serif; font-size: 0.85rem; color: #1B4F72; margin-bottom: 0.25rem; }
+        .pipeline-card .meta { font-size: 0.75rem; color: #888; }
+        .pipeline-card .pipe-score { display: inline-block; width: 22px; height: 22px; border-radius: 50%; color: white; font-size: 0.65rem; font-weight: 800; text-align: center; line-height: 22px; margin-right: 0.3rem; }
+        .pipeline-card select { margin-top: 0.4rem; padding: 0.2rem 0.4rem; border: 1px solid #D6EAF8; border-radius: 3px; font-size: 0.75rem; width: 100%; }
+
+        /* Modal */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center; }
+        .modal-overlay.active { display: flex; }
+        .modal { background: white; border-radius: 12px; padding: 2rem; max-width: 700px; width: 90%; max-height: 85vh; overflow-y: auto; position: relative; }
+        .modal h2 { font-family: Poppins, sans-serif; font-size: 1.3rem; color: #1B4F72; margin-bottom: 1rem; }
+        .modal-close { position: absolute; top: 1rem; right: 1rem; background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #888; }
+        .modal-close:hover { color: #333; }
+        .template-tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+        .template-tab { padding: 0.5rem 1rem; border: 1.5px solid #D6EAF8; border-radius: 6px; background: white; cursor: pointer; font-weight: 600; font-size: 0.85rem; color: #888; font-family: Inter, sans-serif; }
+        .template-tab.active { background: #1B4F72; color: white; border-color: #1B4F72; }
+        .template-content { background: #F4F7FA; border-radius: 8px; padding: 1.25rem; font-size: 0.9rem; line-height: 1.7; white-space: pre-wrap; min-height: 150px; }
+        .template-actions { margin-top: 1rem; display: flex; gap: 0.5rem; }
+        .copy-feedback { font-size: 0.85rem; color: #27ae60; font-weight: 600; margin-left: 0.5rem; display: none; }
 
         .empty-state { text-align: center; padding: 4rem 2rem; color: #888; }
         .empty-state h3 { font-family: Poppins, sans-serif; color: #1B4F72; margin-bottom: 0.5rem; }
@@ -90,8 +134,15 @@
         .stats-bar .stat { font-size: 0.85rem; color: #555; }
         .stats-bar .stat strong { color: #1B4F72; }
 
+        .enriching-notice { font-size: 0.8rem; color: #E67E22; font-weight: 600; margin-left: 1rem; }
+
         footer { background: #1B4F72; color: white; padding: 2rem; text-align: center; margin-top: 2rem; }
         footer p { font-size: 0.9rem; opacity: 0.8; }
+
+        @media (max-width: 768px) {
+            .pipeline-container { flex-direction: column; }
+            .pipeline-column { min-width: auto; }
+        }
     </style>
 </head>
 <body>
@@ -220,6 +271,7 @@
     <div class="tabs">
         <button class="tab active" onclick="switchTab('results')">Search Results <span class="badge" id="resultsBadge" style="display:none;">0</span></button>
         <button class="tab" onclick="switchTab('saved')">Saved Leads <span class="badge" id="savedBadge" style="display:none;">0</span></button>
+        <button class="tab" onclick="switchTab('pipeline')">Pipeline <span class="badge" id="pipelineBadge" style="display:none;">0</span></button>
     </div>
 
     <!-- Results Area -->
@@ -228,8 +280,16 @@
             <div class="stats-bar" id="statsBar" style="display:none;">
                 <div>
                     <span class="stat">Found <strong id="resultCount">0</strong> businesses</span>
+                    <span class="enriching-notice" id="enrichingNotice" style="display:none;">Fetching contact details...</span>
                 </div>
-                <div style="display:flex; gap:0.5rem;">
+                <div style="display:flex; gap:0.5rem; align-items:center;">
+                    <select id="sortSelect" onchange="sortAndRender()" style="padding:0.4rem 0.6rem; border:1.5px solid #D6EAF8; border-radius:4px; font-size:0.8rem;">
+                        <option value="default">Sort: Default</option>
+                        <option value="score-desc">Score: High to Low</option>
+                        <option value="score-asc">Score: Low to High</option>
+                        <option value="rating-desc">Rating: High to Low</option>
+                        <option value="reviews-asc">Reviews: Low to High</option>
+                    </select>
                     <button class="btn btn-outline btn-sm" onclick="saveAllResults()">Save All</button>
                 </div>
             </div>
@@ -247,6 +307,7 @@
                     <span class="stat">You have <strong id="savedCount">0</strong> saved leads</span>
                 </div>
                 <div style="display:flex; gap:0.5rem;">
+                    <button class="btn btn-outline btn-sm" onclick="findDuplicates()">Find Duplicates</button>
                     <button class="btn btn-outline btn-sm" onclick="exportCSV()">Export CSV</button>
                     <button class="btn btn-danger btn-sm" onclick="clearSaved()">Clear All</button>
                 </div>
@@ -256,6 +317,33 @@
                     <h3>No Saved Leads Yet</h3>
                     <p>Click the bookmark icon on any result to save it here.</p>
                 </div>
+            </div>
+        </div>
+
+        <div id="pipelineTab" style="display:none;">
+            <div class="stats-bar">
+                <div>
+                    <span class="stat">Pipeline: <strong id="pipelineCount">0</strong> leads across all stages</span>
+                </div>
+            </div>
+            <div id="pipelineContainer"></div>
+        </div>
+    </div>
+
+    <!-- Outreach Template Modal -->
+    <div class="modal-overlay" id="templateModal">
+        <div class="modal">
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+            <h2>Outreach Templates — <span id="modalLeadName"></span></h2>
+            <div class="template-tabs">
+                <button class="template-tab active" onclick="switchTemplate('email')">Cold Email</button>
+                <button class="template-tab" onclick="switchTemplate('linkedin')">LinkedIn Message</button>
+                <button class="template-tab" onclick="switchTemplate('phone')">Phone Script</button>
+            </div>
+            <div class="template-content" id="templateContent"></div>
+            <div class="template-actions">
+                <button class="btn btn-primary btn-sm" onclick="copyTemplate()">Copy to Clipboard</button>
+                <span class="copy-feedback" id="copyFeedback">Copied!</span>
             </div>
         </div>
     </div>
@@ -269,6 +357,9 @@
         let currentResults = [];
         let savedLeads = JSON.parse(localStorage.getItem('leadfinder_leads') || '[]');
         let apiKey = localStorage.getItem('leadfinder_gapi_key') || '';
+        let currentModalLead = null;
+        let currentTemplateType = 'email';
+        const PIPELINE_STAGES = ['New', 'Contacted', 'Responded', 'Meeting Set', 'Closed', 'Not Interested'];
 
         // ── Init ──
         window.addEventListener('DOMContentLoaded', () => {
@@ -276,7 +367,11 @@
                 document.getElementById('setupBanner').classList.add('hidden');
                 loadGoogleMaps();
             }
+            // Migrate old saved leads that don't have status
+            savedLeads.forEach(l => { if (!l.status) l.status = 'New'; });
+            persistSaved();
             updateSavedBadge();
+            updatePipelineBadge();
         });
 
         // ── API Key ──
@@ -323,6 +418,9 @@
                 }
 
                 const loc = results[0].geometry.location;
+                const searchCity = results[0].address_components.find(c => c.types.includes('locality'));
+                const cityName = searchCity ? searchCity.long_name : location;
+
                 const service = new google.maps.places.PlacesService(document.createElement('div'));
                 const radiusMeters = radiusMiles * 1609.34;
 
@@ -340,13 +438,14 @@
                         return;
                     }
 
-                    currentResults = places.map(p => formatPlace(p, category));
+                    currentResults = places.map(p => formatPlace(p, category, cityName));
                     renderResults();
+                    enrichResults(service);
                 });
             });
         }
 
-        function formatPlace(place, category) {
+        function formatPlace(place, category, city) {
             return {
                 id: place.place_id,
                 name: place.name,
@@ -355,27 +454,101 @@
                 reviewCount: place.user_ratings_total || 0,
                 priceLevel: place.price_level,
                 category: category,
+                city: city || '',
                 isOpen: place.opening_hours ? place.opening_hours.isOpen() : null,
                 photo: place.photos && place.photos.length ? place.photos[0].getUrl({ maxWidth: 400 }) : null,
                 types: place.types || [],
                 lat: place.geometry.location.lat(),
-                lng: place.geometry.location.lng()
+                lng: place.geometry.location.lng(),
+                // Enrichment fields (filled later)
+                phone: null,
+                website: null,
+                hours: null,
+                enriched: false
             };
+        }
+
+        // ── Contact Info Enrichment ──
+        async function enrichResults(service) {
+            const notice = document.getElementById('enrichingNotice');
+            notice.style.display = 'inline';
+
+            const batchSize = 5;
+            for (let i = 0; i < currentResults.length; i += batchSize) {
+                const batch = currentResults.slice(i, i + batchSize);
+                await Promise.all(batch.map(lead => enrichSingleLead(service, lead)));
+                renderResults();
+            }
+
+            notice.style.display = 'none';
+        }
+
+        function enrichSingleLead(service, lead) {
+            return new Promise(resolve => {
+                service.getDetails({
+                    placeId: lead.id,
+                    fields: ['formatted_phone_number', 'website', 'opening_hours']
+                }, (place, status) => {
+                    if (status === google.maps.places.PlacesServiceStatus.OK && place) {
+                        lead.phone = place.formatted_phone_number || null;
+                        lead.website = place.website || null;
+                        lead.hours = place.opening_hours && place.opening_hours.weekday_text
+                            ? place.opening_hours.weekday_text.join(', ')
+                            : null;
+                    }
+                    lead.enriched = true;
+                    resolve();
+                });
+            });
+        }
+
+        // ── Lead Scoring ──
+        function calculateScore(lead) {
+            let score = 0;
+
+            // Review count scoring (fewer = bigger opportunity)
+            if (lead.reviewCount < 10) score += 3;
+            else if (lead.reviewCount < 30) score += 2;
+            else if (lead.reviewCount < 50) score += 1;
+
+            // Rating scoring (lower = needs more help)
+            if (lead.rating && lead.rating < 3.5) score += 2;
+            else if (lead.rating && lead.rating < 4.2) score += 1;
+
+            // No website = huge opportunity
+            if (lead.enriched && !lead.website) score += 3;
+
+            // No phone listed
+            if (lead.enriched && !lead.phone) score += 1;
+
+            // No rating at all means very new / invisible
+            if (!lead.rating) score += 1;
+
+            return Math.min(score, 10);
+        }
+
+        function getScoreClass(score) {
+            if (score >= 7) return 'score-hot';
+            if (score >= 4) return 'score-warm';
+            return 'score-cold';
         }
 
         // ── Signals Analysis ──
         function getSignals(lead) {
             const signals = [];
+
+            // Review signals
             if (lead.reviewCount < 10) {
-                signals.push({ text: 'Few reviews — needs visibility', type: 'opportunity' });
+                signals.push({ text: 'Few reviews \u2014 needs visibility', type: 'opportunity' });
             } else if (lead.reviewCount < 50) {
                 signals.push({ text: lead.reviewCount + ' reviews', type: 'warn' });
             } else {
                 signals.push({ text: lead.reviewCount + ' reviews', type: 'good' });
             }
 
+            // Rating signals
             if (lead.rating && lead.rating < 3.5) {
-                signals.push({ text: 'Low rating (' + lead.rating + ') — reputation help needed', type: 'opportunity' });
+                signals.push({ text: 'Low rating (' + lead.rating + ') \u2014 reputation help needed', type: 'opportunity' });
             } else if (lead.rating && lead.rating >= 4.5) {
                 signals.push({ text: lead.rating + ' stars', type: 'good' });
             } else if (lead.rating) {
@@ -383,10 +556,79 @@
             }
 
             if (lead.reviewCount > 0 && lead.reviewCount < 30 && lead.rating && lead.rating >= 4.0) {
-                signals.push({ text: 'Good service, low visibility — great prospect', type: 'opportunity' });
+                signals.push({ text: 'Good service, low visibility \u2014 great prospect', type: 'opportunity' });
+            }
+
+            // Website/social audit signals
+            if (lead.enriched) {
+                if (!lead.website) {
+                    signals.push({ text: 'No website found', type: 'opportunity' });
+                } else {
+                    signals.push({ text: 'Has website', type: 'good' });
+                }
+                if (!lead.phone) {
+                    signals.push({ text: 'No phone listed', type: 'opportunity' });
+                } else {
+                    signals.push({ text: 'Phone listed', type: 'good' });
+                }
             }
 
             return signals;
+        }
+
+        // ── Duplicate Detection ──
+        function isDuplicate(lead) {
+            return savedLeads.some(s => s.id === lead.id);
+        }
+
+        function isPossibleDuplicate(lead) {
+            const normalize = str => str.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const leadName = normalize(lead.name);
+            return savedLeads.some(s => {
+                if (s.id === lead.id) return false;
+                const savedName = normalize(s.name);
+                // Check if names are very similar (one contains the other)
+                return (leadName.includes(savedName) || savedName.includes(leadName)) && leadName.length > 3;
+            });
+        }
+
+        function findDuplicates() {
+            const normalize = str => str.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const dupes = [];
+            for (let i = 0; i < savedLeads.length; i++) {
+                for (let j = i + 1; j < savedLeads.length; j++) {
+                    const a = normalize(savedLeads[i].name);
+                    const b = normalize(savedLeads[j].name);
+                    if (savedLeads[i].id === savedLeads[j].id || ((a.includes(b) || b.includes(a)) && a.length > 3)) {
+                        dupes.push([savedLeads[i].name, savedLeads[j].name]);
+                    }
+                }
+            }
+            if (dupes.length === 0) {
+                alert('No duplicates found in your saved leads.');
+            } else {
+                alert('Possible duplicates found:\n\n' + dupes.map(d => `\u2022 "${d[0]}" \u2194 "${d[1]}"`).join('\n'));
+            }
+        }
+
+        // ── Sorting ──
+        function sortAndRender() {
+            const sortVal = document.getElementById('sortSelect').value;
+            switch (sortVal) {
+                case 'score-desc':
+                    currentResults.sort((a, b) => calculateScore(b) - calculateScore(a));
+                    break;
+                case 'score-asc':
+                    currentResults.sort((a, b) => calculateScore(a) - calculateScore(b));
+                    break;
+                case 'rating-desc':
+                    currentResults.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+                    break;
+                case 'reviews-asc':
+                    currentResults.sort((a, b) => a.reviewCount - b.reviewCount);
+                    break;
+            }
+            renderResults();
         }
 
         // ── Render ──
@@ -400,7 +642,8 @@
             const html = currentResults.map(lead => {
                 const isSaved = savedIds.has(lead.id);
                 const signals = getSignals(lead);
-                return buildCard(lead, signals, isSaved, false);
+                const possibleDup = !isSaved && isPossibleDuplicate(lead);
+                return buildCard(lead, signals, isSaved, false, possibleDup);
             }).join('');
 
             document.getElementById('resultsContainer').innerHTML = '<div class="results-grid">' + html + '</div>';
@@ -417,42 +660,229 @@
 
             const html = savedLeads.map(lead => {
                 const signals = getSignals(lead);
-                return buildCard(lead, signals, true, true);
+                return buildCard(lead, signals, true, true, false);
             }).join('');
 
             document.getElementById('savedContainer').innerHTML = '<div class="results-grid">' + html + '</div>';
         }
 
-        function buildCard(lead, signals, isSaved, showNotes) {
+        function buildCard(lead, signals, isSaved, showExtras, possibleDup) {
             const signalHtml = signals.map(s =>
                 `<span class="signal signal-${s.type}">${s.text}</span>`
             ).join('');
 
-            const notesHtml = showNotes ? `
+            const score = calculateScore(lead);
+            const scoreHtml = `<div class="score-badge ${getScoreClass(score)}" title="Lead Score: ${score}/10">${score}</div>`;
+
+            const dupBadge = isSaved ? '<span class="dup-badge">Saved</span>' :
+                             possibleDup ? '<span class="dup-badge">Possible Duplicate</span>' : '';
+
+            const notesHtml = showExtras ? `
                 <div class="notes-area">
                     <textarea placeholder="Add notes about this lead..."
                         oninput="updateNote('${lead.id}', this.value)">${lead.notes || ''}</textarea>
                 </div>` : '';
 
+            const statusHtml = showExtras ? `
+                <div class="status-row">
+                    <label>Status:</label>
+                    <select onchange="updateStatus('${lead.id}', this.value)">
+                        ${PIPELINE_STAGES.map(s => `<option value="${s}" ${lead.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+                    </select>
+                </div>` : '';
+
             const googleMapsUrl = `https://www.google.com/maps/place/?q=place_id:${lead.id}`;
 
+            // Contact info rows
+            let contactHtml = '';
+            if (lead.phone) {
+                contactHtml += `<div class="info-row"><span class="label">Phone</span> <a href="tel:${lead.phone}">${escapeHtml(lead.phone)}</a></div>`;
+            }
+            if (lead.website) {
+                const displayUrl = lead.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
+                contactHtml += `<div class="info-row"><span class="label">Website</span> <a href="${lead.website}" target="_blank">${escapeHtml(displayUrl.substring(0, 40))}</a></div>`;
+            }
+
+            // Social/web audit buttons
+            const fbSearchUrl = `https://www.google.com/search?q=site:facebook.com+"${encodeURIComponent(lead.name)}"+"${encodeURIComponent(lead.city || '')}"`;
+
             return `
-                <div class="lead-card ${isSaved ? 'saved' : ''}">
+                <div class="lead-card ${isSaved ? 'saved' : ''} ${possibleDup ? 'duplicate' : ''}">
                     <button class="save-btn ${isSaved ? 'saved' : ''}" onclick="toggleSave('${lead.id}')" title="${isSaved ? 'Remove from saved' : 'Save lead'}">
                         ${isSaved ? '&#9733;' : '&#9734;'}
                     </button>
-                    <h3>${escapeHtml(lead.name)}</h3>
+                    ${scoreHtml}
+                    <h3>${escapeHtml(lead.name)} ${dupBadge}</h3>
                     <span class="category-tag">${escapeHtml(lead.category)}</span>
                     <div class="info-row"><span class="label">Address</span> ${escapeHtml(lead.address)}</div>
                     ${lead.rating ? `<div class="info-row"><span class="label">Rating</span> ${'&#9733;'.repeat(Math.round(lead.rating))} ${lead.rating}/5 (${lead.reviewCount} reviews)</div>` : '<div class="info-row"><span class="label">Rating</span> No reviews yet</div>'}
+                    ${contactHtml}
                     <div class="signals">${signalHtml}</div>
                     <div class="actions">
-                        <a href="${googleMapsUrl}" target="_blank" class="btn btn-outline btn-sm">View on Maps</a>
+                        <a href="${googleMapsUrl}" target="_blank" class="btn btn-outline btn-sm">Maps</a>
                         <a href="https://www.google.com/search?q=${encodeURIComponent(lead.name + ' ' + lead.address)}" target="_blank" class="btn btn-outline btn-sm">Google It</a>
+                        ${lead.website ? `<a href="${lead.website}" target="_blank" class="btn btn-outline btn-sm">Website</a>` : ''}
+                        <a href="${fbSearchUrl}" target="_blank" class="btn btn-outline btn-sm">Find Facebook</a>
+                        <button class="btn btn-success btn-sm" onclick="openTemplateModal('${lead.id}')">Message</button>
                     </div>
+                    ${statusHtml}
                     ${notesHtml}
                 </div>`;
         }
+
+        // ── Pipeline View ──
+        function renderPipeline() {
+            updatePipelineBadge();
+            if (!savedLeads.length) {
+                document.getElementById('pipelineContainer').innerHTML = '<div class="empty-state"><h3>No Leads in Pipeline</h3><p>Save some leads first, then track them through your sales process here.</p></div>';
+                return;
+            }
+
+            const grouped = {};
+            PIPELINE_STAGES.forEach(s => grouped[s] = []);
+            savedLeads.forEach(lead => {
+                const stage = lead.status || 'New';
+                if (grouped[stage]) grouped[stage].push(lead);
+            });
+
+            const columnsHtml = PIPELINE_STAGES.map(stage => {
+                const leads = grouped[stage];
+                const cardsHtml = leads.map(lead => {
+                    const score = calculateScore(lead);
+                    return `
+                        <div class="pipeline-card">
+                            <h5><span class="pipe-score ${getScoreClass(score)}">${score}</span>${escapeHtml(lead.name)}</h5>
+                            <div class="meta">${escapeHtml(lead.category)} &bull; ${escapeHtml(lead.city || lead.address)}</div>
+                            ${lead.phone ? `<div class="meta"><a href="tel:${lead.phone}" style="color:#2E86C1;text-decoration:none;">${escapeHtml(lead.phone)}</a></div>` : ''}
+                            <select onchange="updateStatus('${lead.id}', this.value)">
+                                ${PIPELINE_STAGES.map(s => `<option value="${s}" ${stage === s ? 'selected' : ''}>${s}</option>`).join('')}
+                            </select>
+                        </div>`;
+                }).join('');
+
+                return `
+                    <div class="pipeline-column">
+                        <h4>${stage} <span class="col-count">${leads.length}</span></h4>
+                        ${cardsHtml || '<p style="font-size:0.8rem;color:#aaa;text-align:center;">No leads</p>'}
+                    </div>`;
+            }).join('');
+
+            document.getElementById('pipelineContainer').innerHTML = '<div class="pipeline-container">' + columnsHtml + '</div>';
+        }
+
+        // ── Outreach Templates ──
+        function openTemplateModal(placeId) {
+            const lead = currentResults.find(l => l.id === placeId) || savedLeads.find(l => l.id === placeId);
+            if (!lead) return;
+            currentModalLead = lead;
+            currentTemplateType = 'email';
+            document.getElementById('modalLeadName').textContent = lead.name;
+            document.querySelectorAll('.template-tab').forEach((t, i) => t.classList.toggle('active', i === 0));
+            renderTemplate();
+            document.getElementById('templateModal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('templateModal').classList.remove('active');
+            currentModalLead = null;
+        }
+
+        function switchTemplate(type) {
+            currentTemplateType = type;
+            document.querySelectorAll('.template-tab').forEach(t => {
+                t.classList.toggle('active', t.textContent.toLowerCase().includes(
+                    type === 'email' ? 'email' : type === 'linkedin' ? 'linkedin' : 'phone'
+                ));
+            });
+            renderTemplate();
+        }
+
+        function renderTemplate() {
+            const lead = currentModalLead;
+            if (!lead) return;
+
+            const score = calculateScore(lead);
+            const signals = getSignals(lead);
+            const opportunities = signals.filter(s => s.type === 'opportunity').map(s => s.text);
+            const city = lead.city || lead.address.split(',').pop().trim();
+            const categoryLabel = lead.category.charAt(0).toUpperCase() + lead.category.slice(1);
+
+            let pitchPoints = '';
+            if (opportunities.length) {
+                pitchPoints = opportunities.map(o => `  \u2022 ${o}`).join('\n');
+            } else {
+                pitchPoints = '  \u2022 Increase your online visibility\n  \u2022 Attract more local customers';
+            }
+
+            let content = '';
+
+            if (currentTemplateType === 'email') {
+                content = `Subject: Quick idea for ${lead.name}
+
+Hi there,
+
+I came across ${lead.name} while researching ${categoryLabel.toLowerCase()} businesses in ${city}, and I had a few ideas that could help bring in more customers.
+
+I noticed a couple of things:
+${pitchPoints}
+
+I help local businesses like yours get more visibility and leads through targeted marketing \u2014 things like Google optimization, landing pages, and email campaigns.
+
+Would you be open to a quick 10-minute call this week to see if it\u2019s a fit? No pressure at all.
+
+Best,
+[Your Name]
+[Your Phone]
+[Your Website]`;
+            } else if (currentTemplateType === 'linkedin') {
+                content = `Hi! I came across ${lead.name} and noticed some opportunities to boost your online presence in ${city}.
+
+A few things stood out:
+${pitchPoints}
+
+I work with ${categoryLabel.toLowerCase()} businesses on getting more customers through better marketing. Would you be open to connecting?`;
+            } else {
+                content = `PHONE SCRIPT \u2014 ${lead.name}
+${'='.repeat(40)}
+
+INTRO:
+"Hi, is this the owner/manager of ${lead.name}? My name is [Your Name], I help local ${categoryLabel.toLowerCase()} businesses in ${city} get more customers."
+
+WHY I\u2019M CALLING:
+"I was looking at your online presence and noticed a few things that could be improved:
+${pitchPoints}
+
+I think there\u2019s a real opportunity to get you more visibility and more leads."
+
+ASK:
+"Would you have 10 minutes this week for a quick call? I can share exactly what I\u2019d recommend \u2014 no cost, no obligation."
+
+IF THEY SAY NO:
+"No problem at all. Can I send you a quick email with some ideas? What\u2019s the best email for you?"
+
+NOTES:
+\u2022 Rating: ${lead.rating || 'N/A'}/5 (${lead.reviewCount} reviews)
+\u2022 Lead Score: ${score}/10
+\u2022 Phone: ${lead.phone || 'N/A'}
+\u2022 Website: ${lead.website || 'None found'}`;
+            }
+
+            document.getElementById('templateContent').textContent = content;
+        }
+
+        function copyTemplate() {
+            const content = document.getElementById('templateContent').textContent;
+            navigator.clipboard.writeText(content).then(() => {
+                const feedback = document.getElementById('copyFeedback');
+                feedback.style.display = 'inline';
+                setTimeout(() => feedback.style.display = 'none', 2000);
+            });
+        }
+
+        // Close modal on overlay click
+        document.addEventListener('click', e => {
+            if (e.target.id === 'templateModal') closeModal();
+        });
 
         // ── Save/Remove ──
         function toggleSave(placeId) {
@@ -462,19 +892,20 @@
             } else {
                 const lead = currentResults.find(l => l.id === placeId);
                 if (lead) {
-                    savedLeads.push({ ...lead, savedAt: new Date().toISOString(), notes: '' });
+                    savedLeads.push({ ...lead, savedAt: new Date().toISOString(), notes: '', status: 'New' });
                 }
             }
             persistSaved();
             renderResults();
             if (document.getElementById('savedTab').style.display !== 'none') renderSaved();
+            if (document.getElementById('pipelineTab').style.display !== 'none') renderPipeline();
         }
 
         function saveAllResults() {
             const savedIds = new Set(savedLeads.map(l => l.id));
             currentResults.forEach(lead => {
                 if (!savedIds.has(lead.id)) {
-                    savedLeads.push({ ...lead, savedAt: new Date().toISOString(), notes: '' });
+                    savedLeads.push({ ...lead, savedAt: new Date().toISOString(), notes: '', status: 'New' });
                 }
             });
             persistSaved();
@@ -489,6 +920,17 @@
             }
         }
 
+        function updateStatus(placeId, status) {
+            const lead = savedLeads.find(l => l.id === placeId);
+            if (lead) {
+                lead.status = status;
+                persistSaved();
+                // Re-render whichever view is active
+                if (document.getElementById('savedTab').style.display !== 'none') renderSaved();
+                if (document.getElementById('pipelineTab').style.display !== 'none') renderPipeline();
+            }
+        }
+
         function clearSaved() {
             if (!confirm('Remove all saved leads? This cannot be undone.')) return;
             savedLeads = [];
@@ -500,6 +942,7 @@
         function persistSaved() {
             localStorage.setItem('leadfinder_leads', JSON.stringify(savedLeads));
             updateSavedBadge();
+            updatePipelineBadge();
         }
 
         function updateSavedBadge() {
@@ -512,18 +955,36 @@
             }
         }
 
+        function updatePipelineBadge() {
+            const badge = document.getElementById('pipelineBadge');
+            const active = savedLeads.filter(l => l.status && l.status !== 'Not Interested' && l.status !== 'Closed').length;
+            if (active) {
+                badge.style.display = 'inline';
+                badge.textContent = active;
+            } else {
+                badge.style.display = 'none';
+            }
+            document.getElementById('pipelineCount').textContent = savedLeads.length;
+        }
+
         // ── CSV Export ──
         function exportCSV() {
             if (!savedLeads.length) return alert('No saved leads to export.');
-            const headers = ['Name', 'Category', 'Address', 'Rating', 'Reviews', 'Signals', 'Notes', 'Google Maps', 'Saved Date'];
+            const headers = ['Name', 'Category', 'Address', 'City', 'Rating', 'Reviews', 'Phone', 'Website', 'Score', 'Status', 'Signals', 'Notes', 'Google Maps', 'Saved Date'];
             const rows = savedLeads.map(l => {
                 const signals = getSignals(l).map(s => s.text).join('; ');
+                const score = calculateScore(l);
                 return [
                     l.name,
                     l.category,
                     l.address,
+                    l.city || '',
                     l.rating || 'N/A',
                     l.reviewCount,
+                    l.phone || '',
+                    l.website || '',
+                    score,
+                    l.status || 'New',
                     signals,
                     (l.notes || '').replace(/\n/g, ' '),
                     `https://www.google.com/maps/place/?q=place_id:${l.id}`,
@@ -547,11 +1008,17 @@
         // ── Tabs ──
         function switchTab(tab) {
             document.querySelectorAll('.tab').forEach((t, i) => {
-                t.classList.toggle('active', (tab === 'results' && i === 0) || (tab === 'saved' && i === 1));
+                t.classList.toggle('active',
+                    (tab === 'results' && i === 0) ||
+                    (tab === 'saved' && i === 1) ||
+                    (tab === 'pipeline' && i === 2)
+                );
             });
             document.getElementById('resultsTab').style.display = tab === 'results' ? 'block' : 'none';
             document.getElementById('savedTab').style.display = tab === 'saved' ? 'block' : 'none';
+            document.getElementById('pipelineTab').style.display = tab === 'pipeline' ? 'block' : 'none';
             if (tab === 'saved') renderSaved();
+            if (tab === 'pipeline') renderPipeline();
         }
 
         // ── Util ──
