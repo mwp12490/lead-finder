@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "lead-finder",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["http-server", "C:/Users/Sploosh/lead-finder", "-p", "8090", "-c-1"],
+      "port": 8090
+    }
+  ]
+}
