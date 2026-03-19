@@ -6,8 +6,11 @@ import { escapeHtml, generateId, formatDate, formatDateTime, timeAgo, formatCurr
 let currentSort = { column: 'name', direction: 'asc' };
 let searchQuery = '';
 let filterCategory = '';
+let filterTagId = '';
 let expandedContactId = null;
 let debounceTimer = null;
+let bulkSelectMode = false;
+let bulkSelectedIds = new Set();
 
 function getFilteredContacts() {
   let contacts = store.getContacts();
@@ -24,6 +27,10 @@ function getFilteredContacts() {
 
   if (filterCategory) {
     contacts = contacts.filter(c => c.category === filterCategory);
+  }
+
+  if (filterTagId) {
+    contacts = contacts.filter(c => (c.tags || []).includes(filterTagId));
   }
 
   contacts.sort((a, b) => {
@@ -141,7 +148,7 @@ function renderDetailView(contact) {
 
   return `
     <tr class="contact-detail-row" data-detail-for="${contact.id}">
-      <td colspan="8">
+      <td colspan="${bulkSelectMode ? 11 : 10}">
         <div class="contact-detail-panel">
 
           <div class="contact-detail-header">
@@ -149,6 +156,10 @@ function renderDetailView(contact) {
               <h2 class="contact-detail-name">${escapeHtml(contact.name)}</h2>
               ${contact.businessName ? `<div class="contact-detail-business">${escapeHtml(contact.businessName)}</div>` : ''}
               ${contact.category ? `<span class="badge badge-info">${escapeHtml(contact.category)}</span>` : ''}
+              ${(contact.tags || []).length ? `<div class="tags-row" style="margin-top:0.35rem;">${(contact.tags || []).map(tid => {
+                const tag = store.getTagById(tid);
+                return tag ? `<span class="tag-badge" style="background:${escapeHtml(tag.color)}">${escapeHtml(tag.name)}</span>` : '';
+              }).join('')}</div>` : ''}
             </div>
             <button class="btn btn-sm btn-secondary" data-action="edit-contact" data-id="${contact.id}">Edit</button>
           </div>
@@ -185,6 +196,7 @@ function renderDetailView(contact) {
             <button class="btn btn-sm btn-outline" data-action="log-activity" data-contact-id="${contact.id}" data-type="email">Log Email</button>
             <button class="btn btn-sm btn-outline" data-action="log-activity" data-contact-id="${contact.id}" data-type="meeting">Log Meeting</button>
             <button class="btn btn-sm btn-outline" data-action="log-activity" data-contact-id="${contact.id}" data-type="note">Add Note</button>
+            ${contact.email ? `<button class="btn btn-sm btn-secondary" data-action="compose-email" data-contact-id="${contact.id}">Email</button>` : ''}
             <button class="btn btn-sm btn-outline" data-action="create-deal" data-contact-id="${contact.id}">Create Deal</button>
             <button class="btn btn-sm btn-outline" data-action="add-task" data-contact-id="${contact.id}">Add Task</button>
           </div>
@@ -252,7 +264,13 @@ function renderDetailView(contact) {
 
             <div class="detail-section">
               <h3>Notes</h3>
-              <textarea class="contact-notes-textarea" data-action="update-notes" data-contact-id="${contact.id}" placeholder="Add notes about this contact...">${escapeHtml(contact.notes || '')}</textarea>
+              <div class="notes-log-input-bar" style="display:flex;gap:0.5rem;margin-bottom:0.75rem;">
+                <input type="text" class="form-control" data-action="note-input" data-entity-type="contact" data-entity-id="${contact.id}" placeholder="Add a note..." style="flex:1;">
+                <button class="btn btn-sm btn-primary" data-action="add-note" data-entity-type="contact" data-entity-id="${contact.id}">Add Note</button>
+              </div>
+              <div class="notes-log-list" id="notes-log-contact-${contact.id}">
+                ${renderNotesLog('contact', contact.id)}
+              </div>
             </div>
 
             ${contact.sourceLeadId ? `
@@ -271,6 +289,61 @@ function renderDetailView(contact) {
       </td>
     </tr>
   `;
+}
+
+function renderNotesLog(entityType, entityId) {
+  const notes = store.getNotesFor(entityType, entityId);
+  if (!notes.length) return '<p class="text-muted" style="font-size:0.85rem;">No notes yet.</p>';
+  return notes.map(n => `
+    <div class="note-item" style="display:flex;align-items:flex-start;gap:0.5rem;padding:0.5rem 0;border-bottom:1px solid var(--border-light);">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:0.88rem;">${escapeHtml(n.text)}</div>
+        <div class="text-muted" style="font-size:0.75rem;">${timeAgo(n.createdAt)}</div>
+      </div>
+      <button class="btn btn-sm" data-action="delete-note" data-note-id="${n.id}" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;padding:0.2rem 0.4rem;font-size:0.9rem;" title="Delete note">&times;</button>
+    </div>
+  `).join('');
+}
+
+function renderEmailComposeModal(contact) {
+  const settings = store.getSettings();
+  const senderName = settings.userName || '[Your Name]';
+  const businessName = settings.businessName || '[Your Business]';
+  const defaultSubject = `Quick idea for ${contact.businessName || contact.name}`;
+  const defaultBody = `Hi ${contact.name},\n\nI wanted to reach out regarding ${contact.businessName || 'your business'}.\n\nBest,\n${senderName}\n${businessName}`;
+
+  const html = `
+    <form id="email-compose-form" data-contact-id="${contact.id}">
+      <div class="form-group">
+        <label for="compose-to">To</label>
+        <input type="email" id="compose-to" class="form-control" value="${escapeHtml(contact.email || '')}" readonly>
+      </div>
+      <div class="form-group">
+        <label for="compose-subject">Subject</label>
+        <input type="text" id="compose-subject" class="form-control" value="${escapeHtml(defaultSubject)}">
+      </div>
+      <div class="form-group">
+        <label for="compose-body">Body</label>
+        <textarea id="compose-body" class="form-control" rows="8">${escapeHtml(defaultBody)}</textarea>
+      </div>
+      <div class="form-actions" style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+        <button type="button" class="btn btn-primary" data-action="send-gmail" data-contact-id="${contact.id}">Send via Gmail</button>
+        <button type="button" class="btn btn-secondary" data-action="send-outlook" data-contact-id="${contact.id}">Send via Outlook</button>
+        <button type="button" class="btn btn-outline" data-action="copy-email">Copy to Clipboard</button>
+        <button type="button" class="btn btn-outline" data-action="cancel-modal">Cancel</button>
+      </div>
+    </form>
+  `;
+
+  window.CRM.showModal('Compose Email', html);
+}
+
+function getComposeFields() {
+  return {
+    to: (document.getElementById('compose-to')?.value || '').trim(),
+    subject: (document.getElementById('compose-subject')?.value || '').trim(),
+    body: (document.getElementById('compose-body')?.value || '').trim(),
+  };
 }
 
 function renderContactModal(contact) {
@@ -419,32 +492,49 @@ export function render() {
   const contacts = getFilteredContacts();
   const categories = getUniqueCategories();
   const totalCount = store.getContacts().length;
+  const allTags = store.getTags();
+  const colSpan = bulkSelectMode ? 9 : 8;
 
   section.innerHTML = `
     <div class="section-header">
       <h1>Contacts <span class="count-badge">${totalCount}</span></h1>
-      <button class="btn btn-primary" data-action="add-contact">Add Contact</button>
+      <div style="display:flex;gap:0.5rem;">
+        <button class="btn ${bulkSelectMode ? 'btn-secondary' : 'btn-outline'} btn-sm" data-action="toggle-bulk">${bulkSelectMode ? 'Cancel Select' : 'Select'}</button>
+        <button class="btn btn-primary" data-action="add-contact">Add Contact</button>
+      </div>
     </div>
 
-    <div class="filter-bar">
-      <input type="text" class="form-control search-input" placeholder="Search contacts..." data-action="search" value="${escapeHtml(searchQuery)}">
-      <select class="form-control category-filter" data-action="filter-category">
+    <div class="filter-bar" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem;">
+      <input type="text" class="form-control search-input" placeholder="Search contacts..." data-action="search" value="${escapeHtml(searchQuery)}" style="flex:1;min-width:180px;">
+      <select class="form-control category-filter" data-action="filter-category" style="width:auto;min-width:140px;">
         <option value="">All Categories</option>
         ${categories.map(cat => `<option value="${escapeHtml(cat)}" ${filterCategory === cat ? 'selected' : ''}>${escapeHtml(cat)}</option>`).join('')}
       </select>
+      <select class="form-control tag-filter" data-action="filter-tag" style="width:auto;min-width:140px;">
+        <option value="">All Tags</option>
+        ${allTags.map(t => `<option value="${escapeHtml(t.id)}" ${filterTagId === t.id ? 'selected' : ''}>${escapeHtml(t.name)}</option>`).join('')}
+      </select>
     </div>
+
+    ${bulkSelectMode ? `
+      <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem;">
+        <button class="btn btn-outline btn-sm" data-action="select-all-contacts">Select All</button>
+        <button class="btn btn-outline btn-sm" data-action="deselect-all-contacts">Deselect All</button>
+      </div>` : ''}
 
     ${contacts.length === 0
       ? `<div class="empty-state">
-           <p>${searchQuery || filterCategory ? 'No contacts match your filters.' : 'No contacts yet. Add your first contact to get started.'}</p>
+           <p>${searchQuery || filterCategory || filterTagId ? 'No contacts match your filters.' : 'No contacts yet. Add your first contact to get started.'}</p>
          </div>`
       : `<div class="table-responsive">
           <table class="data-table contacts-table">
             <thead>
               <tr>
+                ${bulkSelectMode ? '<th style="width:40px;"></th>' : ''}
                 <th class="sortable" data-action="sort" data-column="name">Name${sortIndicator('name')}</th>
                 <th class="sortable" data-action="sort" data-column="businessName">Business${sortIndicator('businessName')}</th>
                 <th class="sortable" data-action="sort" data-column="category">Category${sortIndicator('category')}</th>
+                <th>Tags</th>
                 <th class="sortable" data-action="sort" data-column="phone">Phone${sortIndicator('phone')}</th>
                 <th class="sortable" data-action="sort" data-column="email">Email${sortIndicator('email')}</th>
                 <th class="sortable" data-action="sort" data-column="deals">Deals${sortIndicator('deals')}</th>
@@ -457,11 +547,14 @@ export function render() {
                 const dealCount = store.getDealsForContact(c.id).length;
                 const lastAct = getLastActivityDate(c.id);
                 const isExpanded = expandedContactId === c.id;
+                const contactTags = (c.tags || []).map(tid => store.getTagById(tid)).filter(Boolean);
                 return `
                   <tr class="contact-row ${isExpanded ? 'expanded' : ''}" data-action="toggle-detail" data-id="${c.id}">
+                    ${bulkSelectMode ? `<td class="bulk-select-cell" data-action="none"><input type="checkbox" class="contacts-bulk-checkbox" data-contact-id="${c.id}" ${bulkSelectedIds.has(c.id) ? 'checked' : ''}></td>` : ''}
                     <td>${escapeHtml(c.name)}</td>
                     <td>${escapeHtml(c.businessName)}</td>
                     <td>${c.category ? `<span class="badge badge-info">${escapeHtml(c.category)}</span>` : ''}</td>
+                    <td>${contactTags.map(t => `<span class="tag-badge" style="background:${escapeHtml(t.color)};font-size:0.68rem;">${escapeHtml(t.name)}</span>`).join(' ')}</td>
                     <td>${escapeHtml(c.phone)}</td>
                     <td>${escapeHtml(c.email)}</td>
                     <td>${dealCount || ''}</td>
@@ -475,6 +568,14 @@ export function render() {
           </table>
         </div>`
     }
+
+    ${bulkSelectMode && bulkSelectedIds.size > 0 ? `
+      <div class="bulk-action-bar" id="contacts-bulkActionBar">
+        <span class="bulk-count">${bulkSelectedIds.size} selected</span>
+        <button class="btn btn-outline btn-sm" data-action="bulk-add-tag">Add Tag</button>
+        <button class="btn btn-outline btn-sm" data-action="bulk-export-contacts">Export Selected</button>
+        <button class="btn btn-danger btn-sm" data-action="bulk-delete-contacts">Delete Selected</button>
+      </div>` : ''}
   `;
 }
 
@@ -598,7 +699,210 @@ function handleClick(e) {
       render();
       break;
     }
+
+    case 'compose-email': {
+      e.stopPropagation();
+      const contact = store.getContactById(target.dataset.contactId);
+      if (contact) renderEmailComposeModal(contact);
+      break;
+    }
+
+    case 'send-gmail': {
+      e.stopPropagation();
+      const { to, subject, body } = getComposeFields();
+      const gmailUrl = `https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(to)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      window.open(gmailUrl, '_blank');
+      store.addActivity({
+        type: 'email',
+        contactId: target.dataset.contactId,
+        summary: `Email sent via Gmail: ${subject}`,
+        timestamp: new Date().toISOString(),
+      });
+      window.CRM.closeModal();
+      window.CRM.showToast('Gmail compose opened. Activity logged.');
+      render();
+      break;
+    }
+
+    case 'send-outlook': {
+      e.stopPropagation();
+      const { to: olTo, subject: olSubject, body: olBody } = getComposeFields();
+      const outlookUrl = `https://outlook.live.com/mail/0/deeplink/compose?to=${encodeURIComponent(olTo)}&subject=${encodeURIComponent(olSubject)}&body=${encodeURIComponent(olBody)}`;
+      window.open(outlookUrl, '_blank');
+      store.addActivity({
+        type: 'email',
+        contactId: target.dataset.contactId,
+        summary: `Email sent via Outlook: ${olSubject}`,
+        timestamp: new Date().toISOString(),
+      });
+      window.CRM.closeModal();
+      window.CRM.showToast('Outlook compose opened. Activity logged.');
+      render();
+      break;
+    }
+
+    case 'copy-email': {
+      e.stopPropagation();
+      const { to: cpTo, subject: cpSubject, body: cpBody } = getComposeFields();
+      const fullText = `To: ${cpTo}\nSubject: ${cpSubject}\n\n${cpBody}`;
+      navigator.clipboard.writeText(fullText).then(() => {
+        window.CRM.showToast('Email copied to clipboard.');
+      });
+      break;
+    }
+
+    case 'add-note': {
+      e.stopPropagation();
+      const entityType = target.dataset.entityType;
+      const entityId = target.dataset.entityId;
+      const inputEl = document.querySelector(`[data-action="note-input"][data-entity-type="${entityType}"][data-entity-id="${entityId}"]`);
+      if (!inputEl) break;
+      const text = inputEl.value.trim();
+      if (!text) { window.CRM.showToast('Please enter a note.', 'error'); break; }
+      store.addNote({ entityType, entityId, text });
+      window.CRM.showToast('Note added.');
+      render();
+      break;
+    }
+
+    case 'delete-note': {
+      e.stopPropagation();
+      store.removeNote(target.dataset.noteId);
+      window.CRM.showToast('Note deleted.');
+      render();
+      break;
+    }
+
+    case 'none': {
+      // Prevent toggle-detail when clicking bulk checkbox cell
+      e.stopPropagation();
+      break;
+    }
+
+    case 'toggle-bulk': {
+      bulkSelectMode = !bulkSelectMode;
+      bulkSelectedIds.clear();
+      render();
+      break;
+    }
+
+    case 'select-all-contacts': {
+      store.getContacts().forEach(c => bulkSelectedIds.add(c.id));
+      render();
+      break;
+    }
+
+    case 'deselect-all-contacts': {
+      bulkSelectedIds.clear();
+      render();
+      break;
+    }
+
+    case 'bulk-add-tag': {
+      e.stopPropagation();
+      showContactsBulkTagPopover(target);
+      break;
+    }
+
+    case 'bulk-export-contacts': {
+      bulkExportContacts();
+      break;
+    }
+
+    case 'bulk-delete-contacts': {
+      bulkDeleteContacts();
+      break;
+    }
   }
+}
+
+function showContactsBulkTagPopover(anchorEl) {
+  // Remove any existing popover
+  const existing = document.getElementById('contacts-tagPopover');
+  if (existing) existing.remove();
+
+  const tags = store.getTags();
+  const popover = document.createElement('div');
+  popover.className = 'tag-popover';
+  popover.id = 'contacts-tagPopover';
+
+  if (!tags.length) {
+    popover.innerHTML = '<div class="no-tags-msg">No tags yet. Create tags in Settings.</div>';
+  } else {
+    popover.innerHTML = tags.map(t => `
+      <div class="tag-option contacts-bulk-tag-option" data-tag-id="${escapeHtml(t.id)}" style="cursor:pointer;">
+        <span class="tag-color-dot" style="background:${escapeHtml(t.color)}"></span>
+        <span class="tag-option-label">${escapeHtml(t.name)}</span>
+      </div>
+    `).join('');
+  }
+
+  const rect = anchorEl.getBoundingClientRect();
+  popover.style.position = 'fixed';
+  popover.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+  popover.style.left = rect.left + 'px';
+  document.body.appendChild(popover);
+
+  const closeHandler = (ev) => {
+    if (!ev.target.closest('.tag-popover') && !ev.target.closest('[data-action="bulk-add-tag"]')) {
+      popover.remove();
+      document.removeEventListener('click', closeHandler);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', closeHandler), 0);
+
+  popover.addEventListener('click', (ev) => {
+    const opt = ev.target.closest('.contacts-bulk-tag-option');
+    if (opt) {
+      const tagId = opt.dataset.tagId;
+      bulkSelectedIds.forEach(id => {
+        const contact = store.getContactById(id);
+        if (contact) {
+          const tags = contact.tags || [];
+          if (!tags.includes(tagId)) {
+            tags.push(tagId);
+            store.updateContact(id, { tags });
+          }
+        }
+      });
+      window.CRM.showToast(`Tag added to ${bulkSelectedIds.size} contact(s).`);
+      popover.remove();
+      document.removeEventListener('click', closeHandler);
+      render();
+    }
+  });
+}
+
+function bulkExportContacts() {
+  const selected = store.getContacts().filter(c => bulkSelectedIds.has(c.id));
+  if (!selected.length) return;
+
+  const headers = ['Name', 'Business', 'Email', 'Phone', 'Website', 'Address', 'City', 'Category', 'Created'];
+  const rows = selected.map(c => [
+    c.name, c.businessName, c.email, c.phone, c.website, c.address, c.city, c.category,
+    c.createdAt ? new Date(c.createdAt).toLocaleDateString() : '',
+  ]);
+  const csv = [headers, ...rows].map(row =>
+    row.map(cell => '"' + String(cell || '').replace(/"/g, '""') + '"').join(',')
+  ).join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `contacts-selected-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  window.CRM.showToast(`Exported ${selected.length} contact(s).`);
+}
+
+function bulkDeleteContacts() {
+  if (!confirm(`Delete ${bulkSelectedIds.size} selected contact(s)? This cannot be undone.`)) return;
+  const count = bulkSelectedIds.size;
+  bulkSelectedIds.forEach(id => store.removeContact(id));
+  window.CRM.showToast(`Deleted ${count} contact(s).`);
+  bulkSelectedIds.clear();
+  render();
 }
 
 function handleInput(e) {
@@ -614,13 +918,9 @@ function handleInput(e) {
     return;
   }
 
-  // Notes auto-save with debounce
-  if (target.matches('[data-action="update-notes"]')) {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      const contactId = target.dataset.contactId;
-      store.updateContact(contactId, { notes: target.value });
-    }, 500);
+  // Allow Enter key to add note
+  if (target.matches('[data-action="note-input"]') && e.inputType === undefined) {
+    // handled by keydown instead
     return;
   }
 }
@@ -630,6 +930,23 @@ function handleChange(e) {
 
   if (target.matches('[data-action="filter-category"]')) {
     filterCategory = target.value;
+    render();
+  }
+
+  if (target.matches('[data-action="filter-tag"]')) {
+    filterTagId = target.value;
+    render();
+  }
+
+  // Bulk checkbox on contact row
+  if (target.classList.contains('contacts-bulk-checkbox')) {
+    e.stopPropagation();
+    const contactId = target.dataset.contactId;
+    if (target.checked) {
+      bulkSelectedIds.add(contactId);
+    } else {
+      bulkSelectedIds.delete(contactId);
+    }
     render();
   }
 }
@@ -725,6 +1042,20 @@ export function init() {
   section.addEventListener('click', handleClick);
   section.addEventListener('input', handleInput);
   section.addEventListener('change', handleChange);
+
+  // Enter key to add note
+  section.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.matches('[data-action="note-input"]')) {
+      e.preventDefault();
+      const entityType = e.target.dataset.entityType;
+      const entityId = e.target.dataset.entityId;
+      const text = e.target.value.trim();
+      if (!text) return;
+      store.addNote({ entityType, entityId, text });
+      window.CRM.showToast('Note added.');
+      render();
+    }
+  });
 
   // Listen for form submissions at document level (modals may be outside section)
   document.addEventListener('submit', handleSubmit);

@@ -2,7 +2,7 @@
 // Extracts and enhances lead finder functionality from the original single-file app.
 
 import { store } from './store.js';
-import { escapeHtml, generateId, formatDate } from './utils.js';
+import { escapeHtml, generateId, formatDate, timeAgo } from './utils.js';
 
 // ── Module-level state (not persisted in store) ──
 let currentResults = [];
@@ -10,6 +10,9 @@ let currentModalLead = null;
 let currentTemplateType = 'email';
 let currentLeadTab = 'results';
 let searchPanelCollapsed = false;
+let bulkSelectMode = false;
+let bulkSelectedIds = new Set();
+let openTagPopoverId = null;
 
 const PIPELINE_STAGES = ['New', 'Contacted', 'Responded', 'Meeting Set', 'Closed', 'Not Interested'];
 
@@ -335,6 +338,22 @@ function sortAndRender() {
     renderResultsGrid();
 }
 
+// ── Notes Log for Leads ──
+
+function renderLeadNotesLog(leadId) {
+    const notes = store.getNotesFor('lead', leadId);
+    if (!notes.length) return '<p style="font-size:0.8rem;color:var(--text-secondary);">No notes yet.</p>';
+    return notes.map(n => `
+        <div class="lf-note-item" style="display:flex;align-items:flex-start;gap:0.5rem;padding:0.35rem 0;border-bottom:1px solid var(--border-light);">
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:0.85rem;">${escapeHtml(n.text)}</div>
+                <div style="font-size:0.72rem;color:var(--text-secondary);">${timeAgo(n.createdAt)}</div>
+            </div>
+            <button class="lf-delete-note-btn" data-note-id="${n.id}" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;padding:0.2rem 0.4rem;font-size:0.85rem;" title="Delete note">&times;</button>
+        </div>
+    `).join('');
+}
+
 // ── Card Builder ──
 
 function buildCard(lead, signals, isSaved, showExtras, possibleDup) {
@@ -352,9 +371,13 @@ function buildCard(lead, signals, isSaved, showExtras, possibleDup) {
 
     const notesHtml = showExtras ? `
         <div class="notes-area">
-            <textarea placeholder="Add notes about this lead..."
-                data-lead-id="${escapedId}"
-                class="lf-note-input">${escapeHtml(lead.notes || '')}</textarea>
+            <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;">
+                <input type="text" class="lf-note-add-input" data-lead-id="${escapedId}" placeholder="Add a note..." style="flex:1;padding:0.4rem 0.6rem;border:1px solid var(--border-input);border-radius:4px;font-size:0.85rem;background:var(--bg-input);color:var(--text-primary);">
+                <button class="btn btn-sm btn-primary lf-add-note-btn" data-lead-id="${escapedId}">Add</button>
+            </div>
+            <div class="lf-notes-log" data-lead-id="${escapedId}">
+                ${renderLeadNotesLog(lead.id)}
+            </div>
         </div>` : '';
 
     const statusHtml = showExtras ? `
@@ -367,6 +390,20 @@ function buildCard(lead, signals, isSaved, showExtras, possibleDup) {
 
     const convertBtn = showExtras ? `
         <button class="btn btn-secondary btn-sm lf-convert-btn" data-lead-id="${escapedId}">Convert to Contact</button>` : '';
+
+    // Tags display
+    const leadTags = (lead.tags || []).map(tid => store.getTagById(tid)).filter(Boolean);
+    const tagsDisplayHtml = showExtras && leadTags.length ? `
+        <div class="tags-row">
+            ${leadTags.map(t => `<span class="tag-badge" style="background:${escapeHtml(t.color)}">${escapeHtml(t.name)}</span>`).join('')}
+        </div>` : '';
+
+    const tagBtn = showExtras ? `
+        <button class="btn btn-outline btn-sm lf-tag-btn" data-lead-id="${escapedId}" style="position:relative;">Tag</button>` : '';
+
+    // Bulk select checkbox
+    const bulkCheckbox = (showExtras && bulkSelectMode) ? `
+        <input type="checkbox" class="bulk-select-checkbox lf-bulk-checkbox" data-lead-id="${escapedId}" ${bulkSelectedIds.has(lead.id) ? 'checked' : ''}>` : '';
 
     const googleMapsUrl = `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(lead.id)}`;
 
@@ -386,13 +423,15 @@ function buildCard(lead, signals, isSaved, showExtras, possibleDup) {
         : '<div class="info-row"><span class="label">Rating</span> No reviews yet</div>';
 
     return `
-        <div class="lead-card ${isSaved ? 'saved' : ''} ${possibleDup ? 'duplicate' : ''}">
+        <div class="lead-card ${isSaved ? 'saved' : ''} ${possibleDup ? 'duplicate' : ''} ${showExtras && bulkSelectMode ? 'bulk-mode' : ''}" data-card-lead-id="${escapedId}">
+            ${bulkCheckbox}
             <button class="save-btn ${isSaved ? 'saved' : ''} lf-save-btn" data-lead-id="${escapedId}" title="${isSaved ? 'Remove from saved' : 'Save lead'}">
                 ${isSaved ? '&#9733;' : '&#9734;'}
             </button>
             ${scoreHtml}
             <h3>${escapeHtml(lead.name)} ${dupBadge}</h3>
             <span class="category-tag">${escapeHtml(lead.category)}</span>
+            ${tagsDisplayHtml}
             <div class="info-row"><span class="label">Address</span> ${escapeHtml(lead.address)}</div>
             ${ratingRow}
             ${contactHtml}
@@ -403,6 +442,7 @@ function buildCard(lead, signals, isSaved, showExtras, possibleDup) {
                 ${lead.website ? `<a href="${escapeHtml(lead.website)}" target="_blank" rel="noopener" class="btn btn-outline btn-sm">Website</a>` : ''}
                 <a href="${escapeHtml(fbSearchUrl)}" target="_blank" rel="noopener" class="btn btn-outline btn-sm">Find Facebook</a>
                 <button class="btn btn-success btn-sm lf-message-btn" data-lead-id="${escapedId}">Message</button>
+                ${tagBtn}
             </div>
             ${statusHtml}
             ${notesHtml}
@@ -591,9 +631,86 @@ function updateStatus(placeId, status) {
     const lead = store.getLeads().find(l => l.id === placeId);
     if (lead) {
         store.updateLead(lead.id, { status: status });
+
+        // Auto-create follow-up task when moved to "Contacted"
+        if (status === 'Contacted') {
+            const dueDate = new Date();
+            dueDate.setDate(dueDate.getDate() + 3);
+            const dueDateStr = dueDate.toISOString().slice(0, 10);
+            store.addTask({
+                title: `Follow up with ${lead.name}`,
+                dueDate: dueDateStr,
+                priority: 'medium',
+                leadId: lead.id,
+            });
+            window.CRM.showToast('Follow-up task created for 3 days from now');
+        }
+
         if (currentLeadTab === 'saved') renderSaved();
         if (currentLeadTab === 'pipeline') renderPipeline();
     }
+}
+
+// ── Refresh Scores ──
+
+async function refreshScores() {
+    if (typeof google === 'undefined' || !google.maps || !google.maps.places) {
+        window.CRM.showToast('Google Maps API is not loaded. Please set your API key first.', 'error');
+        return;
+    }
+
+    const savedLeads = store.getLeads().filter(l => l.id && l.savedAt);
+    if (savedLeads.length === 0) {
+        window.CRM.showToast('No saved leads to refresh.', 'info');
+        return;
+    }
+
+    const refreshBtn = document.getElementById('lf-refreshScoresBtn');
+    const progressEl = document.getElementById('lf-refreshProgress');
+    if (refreshBtn) refreshBtn.disabled = true;
+    if (progressEl) progressEl.style.display = 'inline';
+
+    const service = new google.maps.places.PlacesService(document.createElement('div'));
+    const batchSize = 3;
+    const delayMs = 500;
+    let updated = 0;
+
+    for (let i = 0; i < savedLeads.length; i += batchSize) {
+        const batch = savedLeads.slice(i, i + batchSize);
+        if (progressEl) progressEl.textContent = `Refreshing ${i + 1} of ${savedLeads.length}...`;
+
+        await Promise.all(batch.map(lead => new Promise(resolve => {
+            service.getDetails({
+                placeId: lead.id,
+                fields: ['formatted_phone_number', 'website', 'opening_hours', 'rating', 'user_ratings_total'],
+            }, (place, status) => {
+                if (status === google.maps.places.PlacesServiceStatus.OK && place) {
+                    const updates = {
+                        phone: place.formatted_phone_number || lead.phone,
+                        website: place.website || lead.website,
+                        hours: place.opening_hours && place.opening_hours.weekday_text
+                            ? place.opening_hours.weekday_text.join(', ')
+                            : lead.hours,
+                        rating: place.rating != null ? place.rating : lead.rating,
+                        reviewCount: place.user_ratings_total != null ? place.user_ratings_total : lead.reviewCount,
+                        enriched: true,
+                    };
+                    store.updateLead(lead.id, updates);
+                    updated++;
+                }
+                resolve();
+            });
+        })));
+
+        if (i + batchSize < savedLeads.length) {
+            await new Promise(r => setTimeout(r, delayMs));
+        }
+    }
+
+    if (refreshBtn) refreshBtn.disabled = false;
+    if (progressEl) progressEl.style.display = 'none';
+    window.CRM.showToast(`${updated} leads updated`);
+    renderSaved();
 }
 
 function clearSaved() {
@@ -704,8 +821,10 @@ function openTemplateModal(placeId) {
             <button class="template-tab lf-template-tab" data-type="phone">Phone Script</button>
         </div>
         <div class="template-content" id="lf-templateContent">${escapeHtml(templates.email)}</div>
-        <div class="template-actions">
+        <div class="template-actions" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
             <button class="btn btn-primary btn-sm" id="lf-copyTemplateBtn">Copy to Clipboard</button>
+            <button class="btn btn-sm btn-outline" id="lf-openGmailBtn">Open in Gmail</button>
+            <button class="btn btn-sm btn-outline" id="lf-openOutlookBtn">Open in Outlook</button>
             <span class="copy-feedback" id="lf-copyFeedback">Copied!</span>
         </div>`;
 
@@ -738,6 +857,37 @@ function openTemplateModal(placeId) {
                     setTimeout(() => { feedback.style.display = 'none'; }, 2000);
                 }
             });
+        });
+    }
+
+    // Gmail button
+    const gmailBtn = document.getElementById('lf-openGmailBtn');
+    if (gmailBtn) {
+        gmailBtn.addEventListener('click', () => {
+            const contentEl = document.getElementById('lf-templateContent');
+            if (!contentEl) return;
+            const text = contentEl.textContent;
+            const subjectMatch = text.match(/^Subject:\s*(.+)/m);
+            const subject = subjectMatch ? subjectMatch[1].trim() : `Outreach to ${lead.name}`;
+            const body = subjectMatch ? text.replace(/^Subject:\s*.+\n\n?/m, '') : text;
+            const email = lead.phone ? '' : ''; // No email for leads typically
+            const gmailUrl = `https://mail.google.com/mail/?view=cm&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+            window.open(gmailUrl, '_blank');
+        });
+    }
+
+    // Outlook button
+    const outlookBtn = document.getElementById('lf-openOutlookBtn');
+    if (outlookBtn) {
+        outlookBtn.addEventListener('click', () => {
+            const contentEl = document.getElementById('lf-templateContent');
+            if (!contentEl) return;
+            const text = contentEl.textContent;
+            const subjectMatch = text.match(/^Subject:\s*(.+)/m);
+            const subject = subjectMatch ? subjectMatch[1].trim() : `Outreach to ${lead.name}`;
+            const body = subjectMatch ? text.replace(/^Subject:\s*.+\n\n?/m, '') : text;
+            const outlookUrl = `https://outlook.live.com/mail/0/deeplink/compose?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+            window.open(outlookUrl, '_blank');
         });
     }
 }
@@ -919,6 +1069,209 @@ function toggleSearchPanel() {
 
 // ── Event Delegation ──
 
+// ── Tag Popover ──
+
+function showTagPopover(leadId, anchorEl) {
+    // Close any existing popover
+    closeTagPopover();
+    openTagPopoverId = leadId;
+
+    const tags = store.getTags();
+    const lead = store.getLeadById(leadId);
+    if (!lead) return;
+
+    const leadTagIds = lead.tags || [];
+
+    const popover = document.createElement('div');
+    popover.className = 'tag-popover';
+    popover.id = 'lf-tagPopover';
+
+    if (!tags.length) {
+        popover.innerHTML = '<div class="no-tags-msg">No tags created yet. Go to Settings to create tags.</div>';
+    } else {
+        popover.innerHTML = tags.map(t => {
+            const checked = leadTagIds.includes(t.id);
+            return `
+                <label class="tag-option">
+                    <input type="checkbox" class="lf-tag-checkbox" data-tag-id="${escapeHtml(t.id)}" data-lead-id="${escapeHtml(leadId)}" ${checked ? 'checked' : ''}>
+                    <span class="tag-color-dot" style="background:${escapeHtml(t.color)}"></span>
+                    <span class="tag-option-label">${escapeHtml(t.name)}</span>
+                </label>`;
+        }).join('');
+    }
+
+    // Position relative to anchor
+    const rect = anchorEl.getBoundingClientRect();
+    popover.style.position = 'fixed';
+    popover.style.top = (rect.bottom + 4) + 'px';
+    popover.style.left = rect.left + 'px';
+
+    document.body.appendChild(popover);
+
+    // Close on outside click
+    setTimeout(() => {
+        document.addEventListener('click', closeTagPopoverOnOutsideClick);
+    }, 0);
+}
+
+function closeTagPopover() {
+    const existing = document.getElementById('lf-tagPopover');
+    if (existing) existing.remove();
+    openTagPopoverId = null;
+    document.removeEventListener('click', closeTagPopoverOnOutsideClick);
+}
+
+function closeTagPopoverOnOutsideClick(e) {
+    if (!e.target.closest('.tag-popover') && !e.target.closest('.lf-tag-btn')) {
+        closeTagPopover();
+    }
+}
+
+function toggleLeadTag(leadId, tagId) {
+    const lead = store.getLeadById(leadId);
+    if (!lead) return;
+    const tags = lead.tags || [];
+    const idx = tags.indexOf(tagId);
+    if (idx === -1) {
+        tags.push(tagId);
+    } else {
+        tags.splice(idx, 1);
+    }
+    store.updateLead(leadId, { tags: tags });
+}
+
+// ── Bulk Actions ──
+
+function toggleBulkMode() {
+    bulkSelectMode = !bulkSelectMode;
+    bulkSelectedIds.clear();
+    renderSaved();
+}
+
+function toggleBulkSelect(leadId) {
+    if (bulkSelectedIds.has(leadId)) {
+        bulkSelectedIds.delete(leadId);
+    } else {
+        bulkSelectedIds.add(leadId);
+    }
+    updateBulkActionBar();
+    // Update checkbox state without full re-render
+    const checkbox = document.querySelector(`.lf-bulk-checkbox[data-lead-id="${CSS.escape(leadId)}"]`);
+    if (checkbox) checkbox.checked = bulkSelectedIds.has(leadId);
+}
+
+function selectAllLeads() {
+    store.getLeads().forEach(l => bulkSelectedIds.add(l.id));
+    renderSaved();
+}
+
+function deselectAllLeads() {
+    bulkSelectedIds.clear();
+    renderSaved();
+}
+
+function updateBulkActionBar() {
+    const bar = document.getElementById('lf-bulkActionBar');
+    if (!bar) return;
+    const count = bulkSelectedIds.size;
+    bar.style.display = count > 0 ? 'flex' : 'none';
+    const countEl = bar.querySelector('.bulk-count');
+    if (countEl) countEl.textContent = `${count} selected`;
+}
+
+function bulkUpdateStatus(status) {
+    bulkSelectedIds.forEach(id => {
+        store.updateLead(id, { status });
+    });
+    window.CRM.showToast(`Updated ${bulkSelectedIds.size} lead(s) to "${status}".`);
+    bulkSelectedIds.clear();
+    renderSaved();
+}
+
+function bulkAddTag(tagId) {
+    bulkSelectedIds.forEach(id => {
+        const lead = store.getLeadById(id);
+        if (lead) {
+            const tags = lead.tags || [];
+            if (!tags.includes(tagId)) {
+                tags.push(tagId);
+                store.updateLead(id, { tags });
+            }
+        }
+    });
+    window.CRM.showToast(`Tag added to ${bulkSelectedIds.size} lead(s).`);
+    renderSaved();
+}
+
+function bulkExportSelected() {
+    const selectedLeads = store.getLeads().filter(l => bulkSelectedIds.has(l.id));
+    if (!selectedLeads.length) return;
+
+    const headers = ['Name', 'Category', 'Address', 'City', 'Rating', 'Reviews', 'Phone', 'Website', 'Score', 'Status', 'Notes', 'Saved Date'];
+    const rows = selectedLeads.map(l => {
+        const score = calculateScore(l);
+        return [
+            l.name, l.category, l.address, l.city || '', l.rating || 'N/A', l.reviewCount,
+            l.phone || '', l.website || '', score, l.status || 'New',
+            (l.notes || '').replace(/\n/g, ' '),
+            l.savedAt ? new Date(l.savedAt).toLocaleDateString() : '',
+        ];
+    });
+
+    const csv = [headers, ...rows].map(row =>
+        row.map(cell => '"' + String(cell).replace(/"/g, '""') + '"').join(',')
+    ).join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `leads-selected-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    window.CRM.showToast(`Exported ${selectedLeads.length} lead(s).`);
+}
+
+function bulkDeleteSelected() {
+    if (!confirm(`Delete ${bulkSelectedIds.size} selected lead(s)? This cannot be undone.`)) return;
+    bulkSelectedIds.forEach(id => store.removeLead(id));
+    window.CRM.showToast(`Deleted ${bulkSelectedIds.size} lead(s).`);
+    bulkSelectedIds.clear();
+    renderSaved();
+}
+
+function showBulkTagPopover(anchorEl) {
+    closeTagPopover();
+    const tags = store.getTags();
+
+    const popover = document.createElement('div');
+    popover.className = 'tag-popover';
+    popover.id = 'lf-tagPopover';
+
+    if (!tags.length) {
+        popover.innerHTML = '<div class="no-tags-msg">No tags created yet.</div>';
+    } else {
+        popover.innerHTML = tags.map(t => `
+            <div class="tag-option lf-bulk-tag-option" data-tag-id="${escapeHtml(t.id)}" style="cursor:pointer;">
+                <span class="tag-color-dot" style="background:${escapeHtml(t.color)}"></span>
+                <span class="tag-option-label">${escapeHtml(t.name)}</span>
+            </div>
+        `).join('');
+    }
+
+    const rect = anchorEl.getBoundingClientRect();
+    popover.style.position = 'fixed';
+    popover.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+    popover.style.left = rect.left + 'px';
+
+    document.body.appendChild(popover);
+    setTimeout(() => {
+        document.addEventListener('click', closeTagPopoverOnOutsideClick);
+    }, 0);
+}
+
+// ── Event Delegation ──
+
 function attachEvents() {
     const section = document.getElementById('section-leads');
     if (!section) return;
@@ -993,6 +1346,13 @@ function attachEvents() {
             return;
         }
 
+        // Refresh Scores
+        if (target.id === 'lf-refreshScoresBtn') {
+            e.preventDefault();
+            refreshScores();
+            return;
+        }
+
         // Clear Saved
         if (target.id === 'lf-clearSavedBtn') {
             e.preventDefault();
@@ -1004,6 +1364,69 @@ function attachEvents() {
         if (target.id === 'lf-toggleSearch') {
             e.preventDefault();
             toggleSearchPanel();
+            return;
+        }
+
+        // Add note to lead
+        const addNoteBtn = target.closest('.lf-add-note-btn');
+        if (addNoteBtn) {
+            e.preventDefault();
+            const leadId = addNoteBtn.dataset.leadId;
+            const input = section.querySelector(`.lf-note-add-input[data-lead-id="${leadId}"]`);
+            if (!input) return;
+            const text = input.value.trim();
+            if (!text) { window.CRM.showToast('Please enter a note.', 'error'); return; }
+            store.addNote({ entityType: 'lead', entityId: leadId, text });
+            window.CRM.showToast('Note added.');
+            renderSaved();
+            return;
+        }
+
+        // Delete note from lead
+        const deleteNoteBtn = target.closest('.lf-delete-note-btn');
+        if (deleteNoteBtn) {
+            e.preventDefault();
+            store.removeNote(deleteNoteBtn.dataset.noteId);
+            window.CRM.showToast('Note deleted.');
+            renderSaved();
+            return;
+        }
+
+        // Tag button on lead card
+        const tagBtn = target.closest('.lf-tag-btn');
+        if (tagBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            showTagPopover(tagBtn.dataset.leadId, tagBtn);
+            return;
+        }
+
+        // Bulk select toggle button
+        if (target.id === 'lf-bulkSelectBtn' || target.closest('#lf-bulkSelectBtn')) {
+            e.preventDefault();
+            toggleBulkMode();
+            return;
+        }
+
+        // Select All / Deselect All
+        if (target.id === 'lf-selectAllBtn') { e.preventDefault(); selectAllLeads(); return; }
+        if (target.id === 'lf-deselectAllBtn') { e.preventDefault(); deselectAllLeads(); return; }
+
+        // Bulk delete
+        if (target.id === 'lf-bulkDeleteBtn' || target.closest('#lf-bulkDeleteBtn')) {
+            e.preventDefault(); bulkDeleteSelected(); return;
+        }
+
+        // Bulk export
+        if (target.id === 'lf-bulkExportBtn' || target.closest('#lf-bulkExportBtn')) {
+            e.preventDefault(); bulkExportSelected(); return;
+        }
+
+        // Bulk tag button
+        if (target.id === 'lf-bulkTagBtn' || target.closest('#lf-bulkTagBtn')) {
+            e.preventDefault();
+            e.stopPropagation();
+            showBulkTagPopover(target.closest('#lf-bulkTagBtn') || target);
             return;
         }
     });
@@ -1021,13 +1444,53 @@ function attachEvents() {
             sortAndRender();
             return;
         }
+
+        // Bulk status dropdown
+        if (target.id === 'lf-bulkStatusSelect') {
+            const status = target.value;
+            if (status) {
+                bulkUpdateStatus(status);
+                target.value = '';
+            }
+            return;
+        }
+
+        // Bulk checkbox on lead card
+        if (target.classList.contains('lf-bulk-checkbox')) {
+            toggleBulkSelect(target.dataset.leadId);
+            return;
+        }
     });
 
-    // Input events (notes)
-    section.addEventListener('input', (e) => {
-        const target = e.target;
-        if (target.classList.contains('lf-note-input')) {
-            updateNote(target.dataset.leadId, target.value);
+    // Document-level handlers for popovers (appended to body)
+    document.addEventListener('change', (e) => {
+        // Tag checkbox in tag popover
+        if (e.target.classList.contains('lf-tag-checkbox')) {
+            toggleLeadTag(e.target.dataset.leadId, e.target.dataset.tagId);
+            renderSaved();
+        }
+    });
+
+    document.addEventListener('click', (e) => {
+        // Bulk tag option in popover
+        const bulkTagOption = e.target.closest('.lf-bulk-tag-option');
+        if (bulkTagOption) {
+            e.preventDefault();
+            bulkAddTag(bulkTagOption.dataset.tagId);
+            closeTagPopover();
+        }
+    });
+
+    // Keydown events (Enter to add note)
+    section.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && e.target.classList.contains('lf-note-add-input')) {
+            e.preventDefault();
+            const leadId = e.target.dataset.leadId;
+            const text = e.target.value.trim();
+            if (!text) return;
+            store.addNote({ entityType: 'lead', entityId: leadId, text });
+            window.CRM.showToast('Note added.');
+            renderSaved();
         }
     });
 }
@@ -1154,19 +1617,38 @@ export function render() {
             <div class="stats-bar">
                 <div>
                     <span class="stat">You have <strong id="lf-savedCount">${savedCount}</strong> saved leads</span>
+                    <span id="lf-refreshProgress" style="display:none;margin-left:8px;font-size:0.8rem;color:#2563eb;"></span>
                 </div>
                 <div style="display:flex; gap:0.5rem;">
+                    <button class="btn btn-outline btn-sm" id="lf-refreshScoresBtn">Refresh Scores</button>
                     <button class="btn btn-outline btn-sm" id="lf-findDupesBtn">Find Duplicates</button>
                     <button class="btn btn-outline btn-sm" id="lf-exportCsvBtn">Export CSV</button>
+                    <button class="btn ${bulkSelectMode ? 'btn-secondary' : 'btn-outline'} btn-sm" id="lf-bulkSelectBtn">${bulkSelectMode ? 'Cancel Select' : 'Select'}</button>
                     <button class="btn btn-danger btn-sm" id="lf-clearSavedBtn">Clear All</button>
                 </div>
             </div>
+            ${bulkSelectMode ? `
+                <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem;">
+                    <button class="btn btn-outline btn-sm" id="lf-selectAllBtn">Select All</button>
+                    <button class="btn btn-outline btn-sm" id="lf-deselectAllBtn">Deselect All</button>
+                </div>` : ''}
             <div id="lf-savedContainer">
                 <div class="empty-state">
                     <h3>No Saved Leads Yet</h3>
                     <p>Click the bookmark icon on any result to save it here.</p>
                 </div>
             </div>
+            ${bulkSelectMode ? `
+                <div class="bulk-action-bar" id="lf-bulkActionBar" style="display:${bulkSelectedIds.size > 0 ? 'flex' : 'none'};">
+                    <span class="bulk-count">${bulkSelectedIds.size} selected</span>
+                    <select id="lf-bulkStatusSelect" class="btn btn-outline btn-sm" style="padding:0.35rem 0.5rem;">
+                        <option value="">Update Status...</option>
+                        ${PIPELINE_STAGES.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('')}
+                    </select>
+                    <button class="btn btn-outline btn-sm" id="lf-bulkTagBtn">Add Tag</button>
+                    <button class="btn btn-outline btn-sm" id="lf-bulkExportBtn">Export Selected</button>
+                    <button class="btn btn-danger btn-sm" id="lf-bulkDeleteBtn">Delete Selected</button>
+                </div>` : ''}
         </div>`;
 
     const pipelineTabHtml = `

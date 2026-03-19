@@ -5,6 +5,19 @@ import { escapeHtml, formatDate, formatCurrency, timeAgo } from './utils.js';
 
 // ---- Helpers ----
 
+function updateThemeToggleIcon() {
+    const btn = document.getElementById('theme-toggle-btn');
+    if (!btn) return;
+    const settings = store.getSettings();
+    const isLight = settings.theme === 'light';
+    btn.innerHTML = isLight
+        ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg>'
+        : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
+    btn.title = isLight ? 'Switch to Dark Mode' : 'Switch to Light Mode';
+}
+
+export { updateThemeToggleIcon };
+
 function maskApiKey(key) {
     if (!key) return '';
     if (key.length <= 4) return key;
@@ -88,6 +101,44 @@ export function render() {
                 </label>
                 <button class="btn btn-danger" id="btn-clear-data">Clear All Data</button>
             </div>
+        </div>
+
+        <div class="card settings-card">
+            <h3>Theme</h3>
+            <p class="text-muted">Choose your preferred color scheme.</p>
+            <div class="settings-actions" style="margin-top:0.75rem;">
+                <button class="btn ${(settings.theme || 'dark') === 'dark' ? 'btn-primary' : 'btn-outline'}" id="btn-theme-dark">Dark</button>
+                <button class="btn ${settings.theme === 'light' ? 'btn-primary' : 'btn-outline'}" id="btn-theme-light">Light</button>
+            </div>
+        </div>
+
+        <div class="card settings-card">
+            <h3>Tags Management</h3>
+            <p class="text-muted">Create and manage tags for organizing leads and contacts.</p>
+            <div style="display:flex;gap:0.5rem;align-items:flex-end;flex-wrap:wrap;margin-top:0.75rem;">
+                <div class="form-group" style="margin-bottom:0;flex:1;min-width:140px;">
+                    <label for="settings-tag-name">Tag Name</label>
+                    <input type="text" id="settings-tag-name" class="form-control" placeholder="e.g. Hot Lead">
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label>Color</label>
+                    <div class="tag-color-picker" id="settings-tag-colors">
+                        ${store.TAG_COLORS.map((c, i) => `<div class="tag-color-swatch ${i === 0 ? 'selected' : ''}" data-color="${escapeHtml(c)}" style="background:${escapeHtml(c)}"></div>`).join('')}
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-sm" id="btn-add-tag">Add Tag</button>
+            </div>
+            ${store.getTags().length ? `
+                <div class="tags-list" id="settings-tags-list">
+                    ${store.getTags().map(t => `
+                        <div class="tag-list-item">
+                            <span class="tag-color-dot" style="background:${escapeHtml(t.color)}"></span>
+                            <span class="tag-name">${escapeHtml(t.name)}</span>
+                            <button class="btn-delete-tag" data-tag-id="${escapeHtml(t.id)}" title="Delete tag">&times;</button>
+                        </div>
+                    `).join('')}
+                </div>
+            ` : '<p class="text-muted" style="margin-top:0.75rem;">No tags created yet.</p>'}
         </div>
 
         <div class="card settings-card">
@@ -237,6 +288,8 @@ function handleClearData() {
     localStorage.removeItem('crm_activities');
     localStorage.removeItem('crm_tasks');
     localStorage.removeItem('crm_settings');
+    localStorage.removeItem('crm_tags');
+    localStorage.removeItem('crm_notes');
 
     // Re-initialize the store
     store.init();
@@ -271,6 +324,54 @@ export function init() {
 
         if (target.id === 'btn-clear-data' || target.closest('#btn-clear-data')) {
             handleClearData();
+            return;
+        }
+
+        if (target.id === 'btn-theme-dark' || target.closest('#btn-theme-dark')) {
+            store.updateSettings({ theme: 'dark' });
+            document.documentElement.removeAttribute('data-theme');
+            updateThemeToggleIcon();
+            window.CRM.showToast('Dark theme applied.');
+            render();
+            return;
+        }
+
+        if (target.id === 'btn-theme-light' || target.closest('#btn-theme-light')) {
+            store.updateSettings({ theme: 'light' });
+            document.documentElement.setAttribute('data-theme', 'light');
+            updateThemeToggleIcon();
+            window.CRM.showToast('Light theme applied.');
+            render();
+            return;
+        }
+
+        // Tag color swatch selection
+        if (target.classList.contains('tag-color-swatch')) {
+            section.querySelectorAll('.tag-color-swatch').forEach(s => s.classList.remove('selected'));
+            target.classList.add('selected');
+            return;
+        }
+
+        // Add tag
+        if (target.id === 'btn-add-tag' || target.closest('#btn-add-tag')) {
+            const nameInput = document.getElementById('settings-tag-name');
+            const name = nameInput ? nameInput.value.trim() : '';
+            if (!name) { window.CRM.showToast('Please enter a tag name.', 'error'); return; }
+            const selectedSwatch = section.querySelector('.tag-color-swatch.selected');
+            const color = selectedSwatch ? selectedSwatch.dataset.color : store.TAG_COLORS[0];
+            store.addTag({ name, color });
+            window.CRM.showToast('Tag created.');
+            render();
+            return;
+        }
+
+        // Delete tag
+        const deleteTagBtn = target.closest('.btn-delete-tag');
+        if (deleteTagBtn) {
+            const tagId = deleteTagBtn.dataset.tagId;
+            store.removeTag(tagId);
+            window.CRM.showToast('Tag deleted.');
+            render();
             return;
         }
     });

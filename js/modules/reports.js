@@ -509,6 +509,74 @@ function buildDealPipelineValue() {
   };
 }
 
+function buildWinLossReasons() {
+  const deals = store.getDeals().filter(d =>
+    (d.stage === 'Closed Won' || d.stage === 'Closed Lost') && d.closeReason
+  );
+
+  if (deals.length === 0) return null;
+
+  // Collect all unique reasons
+  const wonReasons = {};
+  const lostReasons = {};
+
+  for (const deal of deals) {
+    if (deal.stage === 'Closed Won') {
+      wonReasons[deal.closeReason] = (wonReasons[deal.closeReason] || 0) + 1;
+    } else {
+      lostReasons[deal.closeReason] = (lostReasons[deal.closeReason] || 0) + 1;
+    }
+  }
+
+  // Combine all unique reasons
+  const allReasons = [...new Set([...Object.keys(wonReasons), ...Object.keys(lostReasons)])];
+  allReasons.sort();
+
+  const wonData = allReasons.map(r => wonReasons[r] || 0);
+  const lostData = allReasons.map(r => lostReasons[r] || 0);
+
+  return {
+    type: 'bar',
+    data: {
+      labels: allReasons,
+      datasets: [
+        {
+          label: 'Won',
+          data: wonData,
+          backgroundColor: '#22c55e',
+          borderRadius: 4,
+        },
+        {
+          label: 'Lost',
+          data: lostData,
+          backgroundColor: '#ef4444',
+          borderRadius: 4,
+        },
+      ],
+    },
+    options: getDarkThemeOptions({
+      indexAxis: 'y',
+      plugins: {
+        legend: {
+          display: true,
+          labels: { color: '#e0e0e0' },
+        },
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          grid: { color: 'rgba(255,255,255,0.05)' },
+          ticks: { color: '#a0a0b0', precision: 0 },
+        },
+        y: {
+          grid: { display: false },
+          ticks: { color: '#e0e0e0' },
+        },
+      },
+    }),
+  };
+}
+
 // ---- Rendering ----
 
 function renderHeader() {
@@ -542,6 +610,7 @@ function renderChartsGrid() {
     { title: 'Activity by Type',        id: 'chart-activity-by-type' },
     { title: 'Lead Source by Category', id: 'chart-lead-source-category' },
     { title: 'Deal Pipeline Value',     id: 'chart-deal-pipeline-value' },
+    { title: 'Win/Loss Reasons',        id: 'chart-win-loss-reasons' },
   ];
 
   const cardsHtml = chartDefs.map(c => chartCard(c.title, c.id)).join('');
@@ -560,6 +629,7 @@ function populateCharts() {
     { id: 'chart-activity-by-type',      builder: buildActivityByType,     title: 'Activity by Type' },
     { id: 'chart-lead-source-category',  builder: buildLeadSourceByCategory, title: 'Lead Source by Category' },
     { id: 'chart-deal-pipeline-value',   builder: buildDealPipelineValue,  title: 'Deal Pipeline Value' },
+    { id: 'chart-win-loss-reasons',      builder: buildWinLossReasons,     title: 'Win/Loss Reasons' },
   ];
 
   for (const { id, builder, title } of chartBuilders) {

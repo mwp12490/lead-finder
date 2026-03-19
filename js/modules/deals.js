@@ -393,6 +393,47 @@ function handleQuickActivitySubmit(form) {
   openDealDetail(dealId);
 }
 
+// ---- Win/Loss Reason Modal ----
+
+const WIN_REASONS = ['Price was right', 'Better service offering', 'Strong relationship', 'Referral', 'No competition', 'Other'];
+const LOSS_REASONS = ['Price too high', 'Went with competitor', 'No budget', 'Lost contact', 'Timing not right', 'Scope mismatch', 'Other'];
+
+function openCloseReasonModal(dealId, newStage) {
+  const deal = store.getDealById(dealId);
+  if (!deal) return;
+
+  const isWon = newStage === 'Closed Won';
+  const reasons = isWon ? WIN_REASONS : LOSS_REASONS;
+  const title = `Deal Closed - ${isWon ? 'Won' : 'Lost'}`;
+
+  const reasonOptions = reasons.map(r =>
+    `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`
+  ).join('');
+
+  const html = `
+    <form id="close-reason-form" data-deal-id="${escapeHtml(dealId)}" data-stage="${escapeHtml(newStage)}">
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div>
+          <label style="display:block;font-weight:500;margin-bottom:4px;font-size:0.85rem;">Reason *</label>
+          <select name="closeReason" required style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;">
+            <option value="">Select a reason...</option>
+            ${reasonOptions}
+          </select>
+        </div>
+        <div>
+          <label style="display:block;font-weight:500;margin-bottom:4px;font-size:0.85rem;">Additional Notes</label>
+          <textarea name="closeNotes" rows="3" placeholder="Optional notes..." style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;resize:vertical;"></textarea>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;">
+          <button type="button" class="btn-cancel-close-reason" style="padding:8px 16px;background:#f3f4f6;color:#374151;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;">Cancel</button>
+          <button type="submit" style="padding:8px 20px;background:${isWon ? '#22c55e' : '#ef4444'};color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:500;">Save</button>
+        </div>
+      </div>
+    </form>`;
+
+  window.CRM.showModal(title, html);
+}
+
 // ---- Render ----
 
 export function render() {
@@ -474,9 +515,13 @@ export function init() {
     if (e.target.classList.contains('deal-stage-select')) {
       const dealId = e.target.dataset.dealId;
       const newStage = e.target.value;
-      store.updateDeal(dealId, { stage: newStage });
-      window.CRM.showToast(`Deal moved to ${newStage}`);
-      render();
+      if (newStage === 'Closed Won' || newStage === 'Closed Lost') {
+        openCloseReasonModal(dealId, newStage);
+      } else {
+        store.updateDeal(dealId, { stage: newStage });
+        window.CRM.showToast(`Deal moved to ${newStage}`);
+        render();
+      }
     }
   });
 
@@ -503,8 +548,9 @@ export function init() {
     }
 
     // Cancel buttons in modals
-    if (target.closest('.btn-cancel-deal') || target.closest('.btn-cancel-activity')) {
+    if (target.closest('.btn-cancel-deal') || target.closest('.btn-cancel-activity') || target.closest('.btn-cancel-close-reason')) {
       window.CRM.closeModal();
+      render();
       return;
     }
   });
@@ -520,6 +566,24 @@ export function init() {
     if (e.target.id === 'quick-activity-form') {
       e.preventDefault();
       handleQuickActivitySubmit(e.target);
+      return;
+    }
+
+    if (e.target.id === 'close-reason-form') {
+      e.preventDefault();
+      const form = e.target;
+      const dealId = form.dataset.dealId;
+      const stage = form.dataset.stage;
+      const closeReason = form.closeReason.value;
+      const closeNotes = form.closeNotes.value.trim();
+      if (!closeReason) {
+        window.CRM.showToast('Please select a reason.', 'error');
+        return;
+      }
+      store.updateDeal(dealId, { stage, closeReason, closeNotes });
+      window.CRM.showToast(`Deal moved to ${stage}`);
+      window.CRM.closeModal();
+      render();
       return;
     }
   });

@@ -9,6 +9,8 @@ const KEYS = {
   activities: 'crm_activities',
   tasks: 'crm_tasks',
   settings: 'crm_settings',
+  notes: 'crm_notes',
+  tags: 'crm_tags',
 };
 
 const OLD_KEYS = {
@@ -28,6 +30,8 @@ let cache = {
   activities: [],
   tasks: [],
   settings: { apiKey: '', userName: '', businessName: '' },
+  notes: [],
+  tags: [],
 };
 
 function load(key, fallback) {
@@ -71,6 +75,8 @@ export const store = {
     cache.activities = load(KEYS.activities, []);
     cache.tasks = load(KEYS.tasks, []);
     cache.settings = load(KEYS.settings, { apiKey: '', userName: '', businessName: '' });
+    cache.notes = load(KEYS.notes, []);
+    cache.tags = load(KEYS.tags, []);
 
     // Run migration from old format if needed
     if (cache.leads.length === 0 && localStorage.getItem(KEYS.leads) === null) {
@@ -331,6 +337,70 @@ export const store = {
     if (idx === -1) return false;
     cache.tasks.splice(idx, 1);
     persist('tasks');
+    return true;
+  },
+
+  // ---- Notes ----
+
+  getNotes() {
+    return cache.notes;
+  },
+
+  addNote(note) {
+    const entry = {
+      id: note.id || generateId(),
+      entityType: note.entityType || '',
+      entityId: note.entityId || '',
+      text: note.text || '',
+      createdAt: note.createdAt || new Date().toISOString(),
+    };
+    cache.notes.push(entry);
+    persist('notes');
+    return entry;
+  },
+
+  getNotesFor(entityType, entityId) {
+    return cache.notes
+      .filter(n => n.entityType === entityType && n.entityId === entityId)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  },
+
+  removeNote(id) {
+    const idx = cache.notes.findIndex(n => n.id === id);
+    if (idx === -1) return false;
+    cache.notes.splice(idx, 1);
+    persist('notes');
+    return true;
+  },
+
+  // ---- Tags ----
+
+  TAG_COLORS: ['#e94560', '#0ea5e9', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'],
+
+  getTags() {
+    return cache.tags;
+  },
+
+  getTagById(id) {
+    return cache.tags.find(t => t.id === id) || null;
+  },
+
+  addTag(tag) {
+    const entry = {
+      id: tag.id || generateId(),
+      name: tag.name || '',
+      color: tag.color || '#0ea5e9',
+    };
+    cache.tags.push(entry);
+    persist('tags');
+    return entry;
+  },
+
+  removeTag(id) {
+    const idx = cache.tags.findIndex(t => t.id === id);
+    if (idx === -1) return false;
+    cache.tags.splice(idx, 1);
+    persist('tags');
     return true;
   },
 
