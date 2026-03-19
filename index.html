@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lead Finder - Local Business Discovery Tool</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Inter, sans-serif; color: #2C3E50; line-height: 1.6; background: #F4F7FA; }
+        nav { background: #fff; padding: 1rem 0; box-shadow: 0 2px 8px rgba(27,79,114,0.08); position: sticky; top: 0; z-index: 1000; }
+        .nav-container { max-width: 1200px; margin: 0 auto; padding: 0 2rem; display: flex; justify-content: space-between; align-items: center; }
+        .logo { font-family: Poppins, sans-serif; font-size: 1.5rem; font-weight: 700; color: #1B4F72; text-decoration: none; }
+
+        .tool-header { background: linear-gradient(135deg, #1B4F72 0%, #2E86C1 100%); color: white; padding: 2.5rem 2rem; text-align: center; }
+        .tool-header h1 { font-family: Poppins, sans-serif; font-size: 2rem; font-weight: 800; margin-bottom: 0.5rem; }
+        .tool-header p { opacity: 0.9; max-width: 600px; margin: 0 auto; }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 1rem; }
+
+        /* Setup banner */
+        .setup-banner { background: #FEF3E2; border: 1px solid #E67E22; border-radius: 8px; padding: 1.5rem; margin: 1.5rem auto; max-width: 1200px; }
+        .setup-banner h3 { color: #D35400; font-size: 1rem; margin-bottom: 0.5rem; }
+        .setup-banner p { font-size: 0.9rem; color: #555; margin-bottom: 0.75rem; }
+        .setup-banner ol { font-size: 0.85rem; color: #555; padding-left: 1.5rem; margin-bottom: 1rem; }
+        .setup-banner ol li { margin-bottom: 0.25rem; }
+        .setup-banner .api-input-row { display: flex; gap: 0.5rem; }
+        .setup-banner input { flex: 1; padding: 0.5rem 0.75rem; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9rem; }
+        .setup-banner button { padding: 0.5rem 1.25rem; background: #E67E22; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; white-space: nowrap; }
+        .setup-banner button:hover { background: #D35400; }
+        .setup-banner.hidden { display: none; }
+
+        /* Search panel */
+        .search-panel { background: white; border-radius: 10px; box-shadow: 0 4px 16px rgba(27,79,114,0.1); padding: 1.5rem; margin: 1.5rem auto; max-width: 1200px; }
+        .search-row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end; }
+        .search-field { flex: 1; min-width: 200px; }
+        .search-field label { display: block; font-size: 0.8rem; font-weight: 600; color: #1B4F72; margin-bottom: 0.25rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        .search-field input, .search-field select { width: 100%; padding: 0.6rem 0.75rem; border: 1.5px solid #D6EAF8; border-radius: 6px; font-size: 0.95rem; font-family: Inter, sans-serif; transition: border 0.3s; }
+        .search-field input:focus, .search-field select:focus { outline: none; border-color: #2E86C1; }
+        .btn { padding: 0.65rem 1.5rem; font-size: 0.95rem; border: none; border-radius: 6px; cursor: pointer; text-decoration: none; transition: all 0.3s; font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem; }
+        .btn-primary { background: #E67E22; color: white; }
+        .btn-primary:hover { background: #D35400; transform: translateY(-1px); }
+        .btn-primary:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+        .btn-secondary { background: #1B4F72; color: white; }
+        .btn-secondary:hover { background: #154360; }
+        .btn-outline { background: transparent; color: #1B4F72; border: 1.5px solid #1B4F72; }
+        .btn-outline:hover { background: #1B4F72; color: white; }
+        .btn-sm { padding: 0.4rem 0.8rem; font-size: 0.8rem; }
+        .btn-danger { background: #e74c3c; color: white; }
+        .btn-danger:hover { background: #c0392b; }
+
+        /* Tabs */
+        .tabs { display: flex; gap: 0; margin: 1.5rem auto 0; max-width: 1200px; }
+        .tab { padding: 0.75rem 1.5rem; background: white; border: none; cursor: pointer; font-weight: 600; color: #888; font-size: 0.95rem; border-bottom: 3px solid transparent; transition: all 0.3s; font-family: Inter, sans-serif; }
+        .tab.active { color: #1B4F72; border-bottom-color: #E67E22; }
+        .tab:hover { color: #1B4F72; }
+        .tab .badge { background: #E67E22; color: white; font-size: 0.7rem; padding: 0.1rem 0.5rem; border-radius: 10px; margin-left: 0.4rem; }
+
+        /* Results */
+        .results-area { max-width: 1200px; margin: 0 auto; padding-bottom: 3rem; }
+        .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1rem; padding: 1rem 0; }
+        @media (max-width: 768px) { .results-grid { grid-template-columns: 1fr; } }
+
+        .lead-card { background: white; border-radius: 8px; padding: 1.25rem; box-shadow: 0 2px 8px rgba(27,79,114,0.08); border-left: 4px solid #2E86C1; transition: all 0.3s; position: relative; }
+        .lead-card:hover { box-shadow: 0 4px 16px rgba(27,79,114,0.15); transform: translateY(-2px); }
+        .lead-card.saved { border-left-color: #27ae60; }
+        .lead-card h3 { font-family: Poppins, sans-serif; font-size: 1rem; color: #1B4F72; margin-bottom: 0.25rem; padding-right: 2rem; }
+        .lead-card .category-tag { font-size: 0.75rem; color: white; background: #2E86C1; padding: 0.15rem 0.6rem; border-radius: 3px; display: inline-block; margin-bottom: 0.5rem; }
+        .lead-card .info-row { font-size: 0.85rem; color: #555; margin-bottom: 0.2rem; display: flex; align-items: center; gap: 0.4rem; }
+        .lead-card .info-row .label { font-weight: 600; color: #1B4F72; min-width: 60px; }
+        .lead-card .signals { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.75rem 0; }
+        .signal { font-size: 0.75rem; padding: 0.2rem 0.6rem; border-radius: 4px; font-weight: 600; }
+        .signal-good { background: #E8F8F5; color: #1E8449; }
+        .signal-warn { background: #FEF9E7; color: #B7950B; }
+        .signal-opportunity { background: #FDEDEC; color: #C0392B; }
+        .lead-card .actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; }
+        .lead-card .save-btn { position: absolute; top: 1rem; right: 1rem; background: none; border: none; font-size: 1.3rem; cursor: pointer; opacity: 0.4; transition: all 0.3s; }
+        .lead-card .save-btn:hover, .lead-card .save-btn.saved { opacity: 1; }
+        .lead-card .notes-area { margin-top: 0.75rem; }
+        .lead-card .notes-area textarea { width: 100%; padding: 0.5rem; border: 1px solid #D6EAF8; border-radius: 4px; font-size: 0.85rem; font-family: Inter, sans-serif; resize: vertical; min-height: 60px; }
+
+        .empty-state { text-align: center; padding: 4rem 2rem; color: #888; }
+        .empty-state h3 { font-family: Poppins, sans-serif; color: #1B4F72; margin-bottom: 0.5rem; }
+
+        .loading { text-align: center; padding: 3rem; }
+        .spinner { display: inline-block; width: 40px; height: 40px; border: 4px solid #D6EAF8; border-top-color: #2E86C1; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .stats-bar { display: flex; gap: 1.5rem; padding: 1rem 0; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+        .stats-bar .stat { font-size: 0.85rem; color: #555; }
+        .stats-bar .stat strong { color: #1B4F72; }
+
+        footer { background: #1B4F72; color: white; padding: 2rem; text-align: center; margin-top: 2rem; }
+        footer p { font-size: 0.9rem; opacity: 0.8; }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="nav-container">
+            <a href="index.html" class="logo">Lead Finder</a>
+        </div>
+    </nav>
+
+    <div class="tool-header">
+        <h1>Lead Finder</h1>
+        <p>Find local service businesses in any area. Search by location and industry to discover potential leads.</p>
+    </div>
+
+    <!-- API Key Setup -->
+    <div class="container">
+        <div class="setup-banner" id="setupBanner">
+            <h3>One-Time Setup: Google Places API Key</h3>
+            <p>This tool uses Google Places API to find real local businesses. You need a free API key:</p>
+            <ol>
+                <li>Go to <strong>Google Cloud Console</strong> &rarr; Create a project</li>
+                <li>Enable the <strong>Places API</strong> and <strong>Maps JavaScript API</strong></li>
+                <li>Create an API key under <strong>Credentials</strong></li>
+                <li>Paste it below (stored only in your browser, never sent to any server)</li>
+            </ol>
+            <div class="api-input-row">
+                <input type="text" id="apiKeyInput" placeholder="Paste your Google API key here...">
+                <button onclick="saveApiKey()">Save Key</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Search Panel -->
+    <div class="search-panel">
+        <div class="search-row">
+            <div class="search-field" style="flex:1.5;">
+                <label>Location</label>
+                <input type="text" id="locationInput" placeholder="e.g. Austin, TX or 90210">
+            </div>
+            <div class="search-field">
+                <label>Business Category</label>
+                <select id="categorySelect">
+                    <option value="">-- Select Category --</option>
+                    <optgroup label="Home Services">
+                        <option value="plumber">Plumbing</option>
+                        <option value="electrician">Electrical</option>
+                        <option value="roofing contractor">Roofing</option>
+                        <option value="HVAC contractor">HVAC</option>
+                        <option value="painter">Painting</option>
+                        <option value="landscaper">Landscaping</option>
+                        <option value="general contractor">General Contractor</option>
+                        <option value="pest control">Pest Control</option>
+                        <option value="cleaning service">Cleaning Services</option>
+                        <option value="garage door service">Garage Door</option>
+                        <option value="fencing contractor">Fencing</option>
+                        <option value="tree service">Tree Service</option>
+                        <option value="pool service">Pool Service</option>
+                        <option value="home remodeling">Remodeling</option>
+                        <option value="flooring contractor">Flooring</option>
+                        <option value="window installation">Windows</option>
+                    </optgroup>
+                    <optgroup label="Health & Wellness">
+                        <option value="dentist">Dentist</option>
+                        <option value="chiropractor">Chiropractor</option>
+                        <option value="physical therapist">Physical Therapy</option>
+                        <option value="veterinarian">Veterinarian</option>
+                        <option value="optometrist">Optometrist</option>
+                        <option value="dermatologist">Dermatologist</option>
+                        <option value="med spa">Med Spa</option>
+                        <option value="mental health counselor">Counseling / Therapy</option>
+                    </optgroup>
+                    <optgroup label="Professional Services">
+                        <option value="lawyer">Law Firm / Attorney</option>
+                        <option value="accountant">Accounting / CPA</option>
+                        <option value="financial advisor">Financial Advisor</option>
+                        <option value="insurance agent">Insurance</option>
+                        <option value="real estate agent">Real Estate</option>
+                        <option value="property management">Property Management</option>
+                    </optgroup>
+                    <optgroup label="Auto Services">
+                        <option value="auto repair">Auto Repair</option>
+                        <option value="auto detailing">Auto Detailing</option>
+                        <option value="auto body shop">Body Shop</option>
+                        <option value="tire shop">Tires</option>
+                    </optgroup>
+                    <optgroup label="Personal Services">
+                        <option value="hair salon">Hair Salon / Barber</option>
+                        <option value="day spa">Day Spa</option>
+                        <option value="personal trainer">Personal Training</option>
+                        <option value="photography studio">Photography</option>
+                        <option value="tattoo parlor">Tattoo Shop</option>
+                    </optgroup>
+                    <optgroup label="Other">
+                        <option value="moving company">Moving Company</option>
+                        <option value="storage facility">Storage</option>
+                        <option value="printing service">Printing</option>
+                        <option value="catering">Catering</option>
+                        <option value="event planner">Event Planning</option>
+                        <option value="dog grooming">Pet Grooming</option>
+                        <option value="tutoring service">Tutoring</option>
+                    </optgroup>
+                </select>
+            </div>
+            <div class="search-field" style="flex:0.7;">
+                <label>Radius (miles)</label>
+                <select id="radiusSelect">
+                    <option value="5">5 miles</option>
+                    <option value="10" selected>10 miles</option>
+                    <option value="25">25 miles</option>
+                    <option value="50">50 miles</option>
+                </select>
+            </div>
+            <div class="search-field" style="flex:0; min-width: auto;">
+                <label>&nbsp;</label>
+                <button class="btn btn-primary" id="searchBtn" onclick="searchBusinesses()">Search</button>
+            </div>
+        </div>
+        <div style="margin-top:0.75rem;">
+            <label style="font-size:0.8rem; color:#888; display:flex; align-items:center; gap:0.4rem;">
+                <input type="text" id="customCategory" placeholder="Or type a custom category..." style="padding:0.4rem 0.6rem; border:1px solid #D6EAF8; border-radius:4px; font-size:0.85rem; width:280px;">
+            </label>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+        <button class="tab active" onclick="switchTab('results')">Search Results <span class="badge" id="resultsBadge" style="display:none;">0</span></button>
+        <button class="tab" onclick="switchTab('saved')">Saved Leads <span class="badge" id="savedBadge" style="display:none;">0</span></button>
+    </div>
+
+    <!-- Results Area -->
+    <div class="results-area">
+        <div id="resultsTab">
+            <div class="stats-bar" id="statsBar" style="display:none;">
+                <div>
+                    <span class="stat">Found <strong id="resultCount">0</strong> businesses</span>
+                </div>
+                <div style="display:flex; gap:0.5rem;">
+                    <button class="btn btn-outline btn-sm" onclick="saveAllResults()">Save All</button>
+                </div>
+            </div>
+            <div id="resultsContainer">
+                <div class="empty-state">
+                    <h3>Search for Local Businesses</h3>
+                    <p>Enter a location and category above to find businesses in your target area.</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="savedTab" style="display:none;">
+            <div class="stats-bar">
+                <div>
+                    <span class="stat">You have <strong id="savedCount">0</strong> saved leads</span>
+                </div>
+                <div style="display:flex; gap:0.5rem;">
+                    <button class="btn btn-outline btn-sm" onclick="exportCSV()">Export CSV</button>
+                    <button class="btn btn-danger btn-sm" onclick="clearSaved()">Clear All</button>
+                </div>
+            </div>
+            <div id="savedContainer">
+                <div class="empty-state">
+                    <h3>No Saved Leads Yet</h3>
+                    <p>Click the bookmark icon on any result to save it here.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Lead Finder. Local Business Discovery Tool.</p>
+    </footer>
+
+    <script>
+        // ── State ──
+        let currentResults = [];
+        let savedLeads = JSON.parse(localStorage.getItem('leadfinder_leads') || '[]');
+        let apiKey = localStorage.getItem('leadfinder_gapi_key') || '';
+
+        // ── Init ──
+        window.addEventListener('DOMContentLoaded', () => {
+            if (apiKey) {
+                document.getElementById('setupBanner').classList.add('hidden');
+                loadGoogleMaps();
+            }
+            updateSavedBadge();
+        });
+
+        // ── API Key ──
+        function saveApiKey() {
+            const key = document.getElementById('apiKeyInput').value.trim();
+            if (!key) return;
+            apiKey = key;
+            localStorage.setItem('leadfinder_gapi_key', key);
+            document.getElementById('setupBanner').classList.add('hidden');
+            loadGoogleMaps();
+        }
+
+        function loadGoogleMaps() {
+            if (document.getElementById('gmaps-script')) return;
+            const s = document.createElement('script');
+            s.id = 'gmaps-script';
+            s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+            s.onerror = () => alert('Failed to load Google Maps. Check your API key.');
+            document.head.appendChild(s);
+        }
+
+        // ── Search ──
+        function searchBusinesses() {
+            const location = document.getElementById('locationInput').value.trim();
+            const category = document.getElementById('customCategory').value.trim() || document.getElementById('categorySelect').value;
+            const radiusMiles = parseInt(document.getElementById('radiusSelect').value);
+
+            if (!location) return alert('Please enter a location.');
+            if (!category) return alert('Please select or type a business category.');
+            if (!apiKey) return alert('Please set up your Google API key first.');
+
+            const btn = document.getElementById('searchBtn');
+            btn.disabled = true;
+            btn.textContent = 'Searching...';
+            document.getElementById('resultsContainer').innerHTML = '<div class="loading"><div class="spinner"></div><p style="margin-top:1rem;color:#888;">Searching for businesses...</p></div>';
+
+            const geocoder = new google.maps.Geocoder();
+            geocoder.geocode({ address: location }, (results, status) => {
+                if (status !== 'OK' || !results[0]) {
+                    btn.disabled = false;
+                    btn.textContent = 'Search';
+                    document.getElementById('resultsContainer').innerHTML = '<div class="empty-state"><h3>Location not found</h3><p>Try a more specific location like "Austin, TX" or a ZIP code.</p></div>';
+                    return;
+                }
+
+                const loc = results[0].geometry.location;
+                const service = new google.maps.places.PlacesService(document.createElement('div'));
+                const radiusMeters = radiusMiles * 1609.34;
+
+                service.nearbySearch({
+                    location: loc,
+                    radius: Math.min(radiusMeters, 50000),
+                    keyword: category,
+                    type: 'establishment'
+                }, (places, searchStatus) => {
+                    btn.disabled = false;
+                    btn.textContent = 'Search';
+
+                    if (searchStatus !== google.maps.places.PlacesServiceStatus.OK || !places.length) {
+                        document.getElementById('resultsContainer').innerHTML = '<div class="empty-state"><h3>No results found</h3><p>Try a different category or expand your search radius.</p></div>';
+                        return;
+                    }
+
+                    currentResults = places.map(p => formatPlace(p, category));
+                    renderResults();
+                });
+            });
+        }
+
+        function formatPlace(place, category) {
+            return {
+                id: place.place_id,
+                name: place.name,
+                address: place.vicinity || '',
+                rating: place.rating || null,
+                reviewCount: place.user_ratings_total || 0,
+                priceLevel: place.price_level,
+                category: category,
+                isOpen: place.opening_hours ? place.opening_hours.isOpen() : null,
+                photo: place.photos && place.photos.length ? place.photos[0].getUrl({ maxWidth: 400 }) : null,
+                types: place.types || [],
+                lat: place.geometry.location.lat(),
+                lng: place.geometry.location.lng()
+            };
+        }
+
+        // ── Signals Analysis ──
+        function getSignals(lead) {
+            const signals = [];
+            if (lead.reviewCount < 10) {
+                signals.push({ text: 'Few reviews — needs visibility', type: 'opportunity' });
+            } else if (lead.reviewCount < 50) {
+                signals.push({ text: lead.reviewCount + ' reviews', type: 'warn' });
+            } else {
+                signals.push({ text: lead.reviewCount + ' reviews', type: 'good' });
+            }
+
+            if (lead.rating && lead.rating < 3.5) {
+                signals.push({ text: 'Low rating (' + lead.rating + ') — reputation help needed', type: 'opportunity' });
+            } else if (lead.rating && lead.rating >= 4.5) {
+                signals.push({ text: lead.rating + ' stars', type: 'good' });
+            } else if (lead.rating) {
+                signals.push({ text: lead.rating + ' stars', type: 'warn' });
+            }
+
+            if (lead.reviewCount > 0 && lead.reviewCount < 30 && lead.rating && lead.rating >= 4.0) {
+                signals.push({ text: 'Good service, low visibility — great prospect', type: 'opportunity' });
+            }
+
+            return signals;
+        }
+
+        // ── Render ──
+        function renderResults() {
+            const savedIds = new Set(savedLeads.map(l => l.id));
+            document.getElementById('resultsBadge').style.display = 'inline';
+            document.getElementById('resultsBadge').textContent = currentResults.length;
+            document.getElementById('resultCount').textContent = currentResults.length;
+            document.getElementById('statsBar').style.display = 'flex';
+
+            const html = currentResults.map(lead => {
+                const isSaved = savedIds.has(lead.id);
+                const signals = getSignals(lead);
+                return buildCard(lead, signals, isSaved, false);
+            }).join('');
+
+            document.getElementById('resultsContainer').innerHTML = '<div class="results-grid">' + html + '</div>';
+        }
+
+        function renderSaved() {
+            document.getElementById('savedCount').textContent = savedLeads.length;
+            updateSavedBadge();
+
+            if (!savedLeads.length) {
+                document.getElementById('savedContainer').innerHTML = '<div class="empty-state"><h3>No Saved Leads Yet</h3><p>Click the bookmark icon on any result to save it here.</p></div>';
+                return;
+            }
+
+            const html = savedLeads.map(lead => {
+                const signals = getSignals(lead);
+                return buildCard(lead, signals, true, true);
+            }).join('');
+
+            document.getElementById('savedContainer').innerHTML = '<div class="results-grid">' + html + '</div>';
+        }
+
+        function buildCard(lead, signals, isSaved, showNotes) {
+            const signalHtml = signals.map(s =>
+                `<span class="signal signal-${s.type}">${s.text}</span>`
+            ).join('');
+
+            const notesHtml = showNotes ? `
+                <div class="notes-area">
+                    <textarea placeholder="Add notes about this lead..."
+                        oninput="updateNote('${lead.id}', this.value)">${lead.notes || ''}</textarea>
+                </div>` : '';
+
+            const googleMapsUrl = `https://www.google.com/maps/place/?q=place_id:${lead.id}`;
+
+            return `
+                <div class="lead-card ${isSaved ? 'saved' : ''}">
+                    <button class="save-btn ${isSaved ? 'saved' : ''}" onclick="toggleSave('${lead.id}')" title="${isSaved ? 'Remove from saved' : 'Save lead'}">
+                        ${isSaved ? '&#9733;' : '&#9734;'}
+                    </button>
+                    <h3>${escapeHtml(lead.name)}</h3>
+                    <span class="category-tag">${escapeHtml(lead.category)}</span>
+                    <div class="info-row"><span class="label">Address</span> ${escapeHtml(lead.address)}</div>
+                    ${lead.rating ? `<div class="info-row"><span class="label">Rating</span> ${'&#9733;'.repeat(Math.round(lead.rating))} ${lead.rating}/5 (${lead.reviewCount} reviews)</div>` : '<div class="info-row"><span class="label">Rating</span> No reviews yet</div>'}
+                    <div class="signals">${signalHtml}</div>
+                    <div class="actions">
+                        <a href="${googleMapsUrl}" target="_blank" class="btn btn-outline btn-sm">View on Maps</a>
+                        <a href="https://www.google.com/search?q=${encodeURIComponent(lead.name + ' ' + lead.address)}" target="_blank" class="btn btn-outline btn-sm">Google It</a>
+                    </div>
+                    ${notesHtml}
+                </div>`;
+        }
+
+        // ── Save/Remove ──
+        function toggleSave(placeId) {
+            const idx = savedLeads.findIndex(l => l.id === placeId);
+            if (idx >= 0) {
+                savedLeads.splice(idx, 1);
+            } else {
+                const lead = currentResults.find(l => l.id === placeId);
+                if (lead) {
+                    savedLeads.push({ ...lead, savedAt: new Date().toISOString(), notes: '' });
+                }
+            }
+            persistSaved();
+            renderResults();
+            if (document.getElementById('savedTab').style.display !== 'none') renderSaved();
+        }
+
+        function saveAllResults() {
+            const savedIds = new Set(savedLeads.map(l => l.id));
+            currentResults.forEach(lead => {
+                if (!savedIds.has(lead.id)) {
+                    savedLeads.push({ ...lead, savedAt: new Date().toISOString(), notes: '' });
+                }
+            });
+            persistSaved();
+            renderResults();
+        }
+
+        function updateNote(placeId, note) {
+            const lead = savedLeads.find(l => l.id === placeId);
+            if (lead) {
+                lead.notes = note;
+                persistSaved();
+            }
+        }
+
+        function clearSaved() {
+            if (!confirm('Remove all saved leads? This cannot be undone.')) return;
+            savedLeads = [];
+            persistSaved();
+            renderSaved();
+            if (currentResults.length) renderResults();
+        }
+
+        function persistSaved() {
+            localStorage.setItem('leadfinder_leads', JSON.stringify(savedLeads));
+            updateSavedBadge();
+        }
+
+        function updateSavedBadge() {
+            const badge = document.getElementById('savedBadge');
+            if (savedLeads.length) {
+                badge.style.display = 'inline';
+                badge.textContent = savedLeads.length;
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        // ── CSV Export ──
+        function exportCSV() {
+            if (!savedLeads.length) return alert('No saved leads to export.');
+            const headers = ['Name', 'Category', 'Address', 'Rating', 'Reviews', 'Signals', 'Notes', 'Google Maps', 'Saved Date'];
+            const rows = savedLeads.map(l => {
+                const signals = getSignals(l).map(s => s.text).join('; ');
+                return [
+                    l.name,
+                    l.category,
+                    l.address,
+                    l.rating || 'N/A',
+                    l.reviewCount,
+                    signals,
+                    (l.notes || '').replace(/\n/g, ' '),
+                    `https://www.google.com/maps/place/?q=place_id:${l.id}`,
+                    l.savedAt ? new Date(l.savedAt).toLocaleDateString() : ''
+                ];
+            });
+
+            const csv = [headers, ...rows].map(row =>
+                row.map(cell => '"' + String(cell).replace(/"/g, '""') + '"').join(',')
+            ).join('\n');
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `leads-${new Date().toISOString().slice(0, 10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // ── Tabs ──
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach((t, i) => {
+                t.classList.toggle('active', (tab === 'results' && i === 0) || (tab === 'saved' && i === 1));
+            });
+            document.getElementById('resultsTab').style.display = tab === 'results' ? 'block' : 'none';
+            document.getElementById('savedTab').style.display = tab === 'saved' ? 'block' : 'none';
+            if (tab === 'saved') renderSaved();
+        }
+
+        // ── Util ──
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
