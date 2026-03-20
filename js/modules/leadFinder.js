@@ -91,6 +91,9 @@ export function calculateScore(lead) {
     if (lead.enriched && !lead.website) score += 3;
     if (lead.enriched && !lead.phone) score += 1;
     if (!lead.rating) score += 1;
+    // Bonus: leads with contact info are more actionable
+    if (lead.email) score += 1;
+    if (lead.decisionMaker) score += 1;
 
     return Math.min(score, 10);
 }
@@ -354,6 +357,144 @@ function renderLeadNotesLog(leadId) {
     `).join('');
 }
 
+// ── Hunter.io Email Finder ──
+
+function renderHunterResults(results) {
+    if (!results || !results.emails || !results.emails.length) {
+        return '<p class="text-muted" style="font-size:0.8rem;margin-top:0.5rem;">No emails found for this domain.</p>';
+    }
+    return `
+        <div class="hunter-email-list" style="margin-top:0.5rem;">
+            ${results.emails.map(e => `
+                <div class="hunter-email-item">
+                    <a href="mailto:${escapeHtml(e.value)}" class="hunter-email-addr">${escapeHtml(e.value)}</a>
+                    <span class="hunter-email-meta">
+                        ${e.first_name ? escapeHtml(e.first_name + ' ' + (e.last_name || '')) : ''}
+                        ${e.position ? ' &middot; ' + escapeHtml(e.position) : ''}
+                        ${e.confidence ? ` <span class="hunter-confidence">${e.confidence}%</span>` : ''}
+                    </span>
+                    <button class="btn btn-sm lf-use-hunter-email" data-email="${escapeHtml(e.value)}" data-name="${escapeHtml((e.first_name || '') + ' ' + (e.last_name || ''))}" data-title="${escapeHtml(e.position || '')}" data-lead-id="${escapeHtml(results._leadId || '')}" style="font-size:0.7rem;padding:0.15rem 0.4rem;">Use</button>
+                </div>
+            `).join('')}
+        </div>`;
+}
+
+async function hunterLookup(leadId, domain) {
+    const settings = store.getSettings();
+    if (!settings.hunterApiKey) {
+        window.CRM.showToast('Please add your Hunter.io API key in Settings first.', 'error');
+        return;
+    }
+
+    const container = document.getElementById(`lf-hunterResults-${CSS.escape(leadId)}`);
+    if (container) container.innerHTML = '<p style="font-size:0.8rem;color:var(--text-secondary);">Looking up emails...</p>';
+
+    try {
+        const url = `https://api.hunter.io/v2/domain-search?domain=${encodeURIComponent(domain)}&api_key=${encodeURIComponent(settings.hunterApiKey)}`;
+        const resp = await fetch(url);
+        const data = await resp.json();
+
+        if (data.errors) {
+            const errMsg = data.errors[0]?.details || 'Hunter.io lookup failed.';
+            if (container) container.innerHTML = `<p class="text-muted" style="font-size:0.8rem;margin-top:0.5rem;">${escapeHtml(errMsg)}</p>`;
+            window.CRM.showToast(errMsg, 'error');
+            return;
+        }
+
+        const results = {
+            _leadId: leadId,
+            domain: domain,
+            emails: (data.data?.emails || []).slice(0, 5),
+            organization: data.data?.organization || '',
+        };
+
+        // Save results to lead
+        store.updateLead(leadId, { hunterResults: results });
+
+        if (container) container.innerHTML = renderHunterResults(results);
+        window.CRM.showToast(`Found ${results.emails.length} email(s) for ${domain}`);
+    } catch (err) {
+        if (container) container.innerHTML = '<p class="text-muted" style="font-size:0.8rem;margin-top:0.5rem;">Network error. Check your connection.</p>';
+        window.CRM.showToast('Hunter.io lookup failed. Check your API key and connection.', 'error');
+    }
+}
+
+// ── Yelp Fusion API Search ──
+
+async function yelpSearch() {
+    const settings = store.getSettings();
+    if (!settings.yelpApiKey) {
+        window.CRM.showToast('Please add your Yelp Fusion API key in Settings first.', 'error');
+        return;
+    }
+
+    const locationInput = document.getElementById('lf-locationInput');
+    const categorySelect = document.getElementById('lf-categorySelect');
+    const customCategory = document.getElementById('lf-customCategory');
+
+    const location = locationInput ? locationInput.value.trim() : '';
+    const category = (customCategory && customCategory.value.trim()) || (categorySelect ? categorySelect.value : '');
+
+    if (!location) { window.CRM.showToast('Please enter a location.', 'error'); return; }
+    if (!category) { window.CRM.showToast('Please select a business category.', 'error'); return; }
+
+    const yelpBtn = document.getElementById('lf-yelpSearchBtn');
+    if (yelpBtn) { yelpBtn.disabled = true; yelpBtn.textContent = 'Searching Yelp...'; }
+
+    const resultsContainer = document.getElementById('lf-resultsContainer');
+    switchLeadTab('results');
+
+    try {
+        // Yelp API requires CORS proxy for browser-based access
+        const corsProxy = 'https://corsproxy.io/?';
+        const yelpUrl = `https://api.yelp.com/v3/businesses/search?term=${encodeURIComponent(category)}&location=${encodeURIComponent(location)}&limit=20&sort_by=rating`;
+        const resp = await fetch(corsProxy + encodeURIComponent(yelpUrl), {
+            headers: { 'Authorization': `Bearer ${settings.yelpApiKey}` }
+        });
+        const data = await resp.json();
+
+        if (data.error) {
+            window.CRM.showToast(data.error.description || 'Yelp search failed.', 'error');
+            if (yelpBtn) { yelpBtn.disabled = false; yelpBtn.textContent = 'Search Yelp'; }
+            return;
+        }
+
+        const yelpResults = (data.businesses || []).map(biz => ({
+            id: 'yelp_' + biz.id,
+            name: biz.name,
+            address: (biz.location?.display_address || []).join(', '),
+            rating: biz.rating || null,
+            reviewCount: biz.review_count || 0,
+            priceLevel: biz.price ? biz.price.length : null,
+            category: category,
+            city: biz.location?.city || '',
+            isOpen: !biz.is_closed,
+            photo: biz.image_url || null,
+            types: biz.categories ? biz.categories.map(c => c.alias) : [],
+            lat: biz.coordinates?.latitude || null,
+            lng: biz.coordinates?.longitude || null,
+            phone: biz.display_phone || biz.phone || null,
+            website: biz.url || null,
+            hours: null,
+            enriched: true,
+            yelp: biz.url || '',
+            source: 'yelp',
+        }));
+
+        // Merge with existing results (don't duplicate)
+        const existingIds = new Set(currentResults.map(r => r.name.toLowerCase()));
+        const newResults = yelpResults.filter(r => !existingIds.has(r.name.toLowerCase()));
+        currentResults = [...currentResults, ...newResults];
+
+        renderResultsGrid();
+        window.CRM.showToast(`Added ${newResults.length} businesses from Yelp.`);
+    } catch (err) {
+        window.CRM.showToast('Yelp search failed. Check your API key.', 'error');
+    }
+
+    if (yelpBtn) { yelpBtn.disabled = false; yelpBtn.textContent = 'Search Yelp'; }
+}
+
 // ── Card Builder ──
 
 function buildCard(lead, signals, isSaved, showExtras, possibleDup) {
@@ -411,12 +552,89 @@ function buildCard(lead, signals, isSaved, showExtras, possibleDup) {
     if (lead.phone) {
         contactHtml += `<div class="info-row"><span class="label">Phone</span> <a href="tel:${escapeHtml(lead.phone)}">${escapeHtml(lead.phone)}</a></div>`;
     }
+    if (lead.email) {
+        contactHtml += `<div class="info-row"><span class="label">Email</span> <a href="mailto:${escapeHtml(lead.email)}">${escapeHtml(lead.email)}</a></div>`;
+    }
     if (lead.website) {
         const displayUrl = lead.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
         contactHtml += `<div class="info-row"><span class="label">Website</span> <a href="${escapeHtml(lead.website)}" target="_blank" rel="noopener">${escapeHtml(displayUrl.substring(0, 40))}</a></div>`;
     }
+    if (lead.decisionMaker) {
+        contactHtml += `<div class="info-row"><span class="label">Contact</span> ${escapeHtml(lead.decisionMaker)}${lead.decisionMakerTitle ? ' (' + escapeHtml(lead.decisionMakerTitle) + ')' : ''}</div>`;
+    }
 
-    const fbSearchUrl = `https://www.google.com/search?q=site:facebook.com+"${encodeURIComponent(lead.name)}"+"${encodeURIComponent(lead.city || '')}"`;
+    // Social media links (only show if populated)
+    let socialHtml = '';
+    if (lead.facebook || lead.instagram || lead.linkedin || lead.yelp) {
+        const socialLinks = [];
+        if (lead.facebook) socialLinks.push(`<a href="${escapeHtml(lead.facebook)}" target="_blank" rel="noopener" class="social-link social-facebook" title="Facebook"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"/></svg></a>`);
+        if (lead.instagram) socialLinks.push(`<a href="${escapeHtml(lead.instagram)}" target="_blank" rel="noopener" class="social-link social-instagram" title="Instagram"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="5"/><circle cx="17.5" cy="6.5" r="1.5"/></svg></a>`);
+        if (lead.linkedin) socialLinks.push(`<a href="${escapeHtml(lead.linkedin)}" target="_blank" rel="noopener" class="social-link social-linkedin" title="LinkedIn"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-2-2 2 2 0 00-2 2v7h-4v-7a6 6 0 016-6zM2 9h4v12H2zM4 6a2 2 0 100-4 2 2 0 000 4z"/></svg></a>`);
+        if (lead.yelp) socialLinks.push(`<a href="${escapeHtml(lead.yelp)}" target="_blank" rel="noopener" class="social-link social-yelp" title="Yelp"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg></a>`);
+        socialHtml = `<div class="social-links-row">${socialLinks.join('')}</div>`;
+    }
+
+    // Research Panel (only on saved leads)
+    const searchName = encodeURIComponent(lead.name);
+    const searchCity = encodeURIComponent(lead.city || '');
+    const searchFull = encodeURIComponent(lead.name + ' ' + (lead.city || lead.address));
+    const websiteDomain = lead.website ? lead.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/.*$/, '') : '';
+
+    const researchPanelHtml = showExtras ? `
+        <details class="research-panel">
+            <summary class="research-panel-toggle">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                Research &amp; Find Contact Info
+            </summary>
+            <div class="research-panel-body">
+                <div class="research-section">
+                    <div class="research-section-title">Find This Business On:</div>
+                    <div class="research-links">
+                        <a href="https://www.google.com/search?q=${searchFull}" target="_blank" rel="noopener" class="research-link research-google"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg> Google</a>
+                        <a href="https://www.google.com/search?q=site:facebook.com+%22${searchName}%22+%22${searchCity}%22" target="_blank" rel="noopener" class="research-link research-facebook"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"/></svg> Facebook</a>
+                        <a href="https://www.google.com/search?q=site:linkedin.com+%22${searchName}%22+%22${searchCity}%22" target="_blank" rel="noopener" class="research-link research-linkedin"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-4 0v7h-4v-7a6 6 0 016-6zM2 9h4v12H2zM4 6a2 2 0 100-4 2 2 0 000 4z"/></svg> LinkedIn</a>
+                        <a href="https://www.yelp.com/search?find_desc=${searchName}&find_loc=${searchCity}" target="_blank" rel="noopener" class="research-link research-yelp"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/></svg> Yelp</a>
+                        <a href="https://www.instagram.com/explore/search/keyword/?q=${searchName}" target="_blank" rel="noopener" class="research-link research-instagram"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="5"/></svg> Instagram</a>
+                        <a href="https://www.bbb.org/search?find_country=US&find_text=${searchName}&find_loc=${searchCity}" target="_blank" rel="noopener" class="research-link research-bbb">BBB</a>
+                        <a href="https://www.google.com/search?q=%22${searchName}%22+%22${searchCity}%22+email+OR+contact" target="_blank" rel="noopener" class="research-link research-email-search"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 7L2 7"/></svg> Find Email</a>
+                        ${websiteDomain ? `<a href="https://${escapeHtml(websiteDomain)}/contact" target="_blank" rel="noopener" class="research-link research-contact-page"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg> Contact Page</a>` : ''}
+                    </div>
+                </div>
+                ${websiteDomain ? `
+                <div class="research-section">
+                    <div class="research-section-title">Email Finder:</div>
+                    <div class="research-links">
+                        <button class="research-link research-hunter lf-hunter-btn" data-lead-id="${escapedId}" data-domain="${escapeHtml(websiteDomain)}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 7L2 7"/></svg> Hunter.io Lookup</button>
+                        <a href="https://hunter.io/search/${escapeHtml(websiteDomain)}" target="_blank" rel="noopener" class="research-link research-hunter-web">Hunter.io (Web)</a>
+                    </div>
+                    <div class="hunter-results" id="lf-hunterResults-${escapedId}">
+                        ${lead.hunterResults ? renderHunterResults(lead.hunterResults) : ''}
+                    </div>
+                </div>` : ''}
+                <div class="research-section">
+                    <div class="research-section-title">Quick Add Contact Info:</div>
+                    <div class="research-quick-add">
+                        <div class="quick-add-row">
+                            <input type="email" class="form-control lf-quick-email" data-lead-id="${escapedId}" placeholder="Email address" value="${escapeHtml(lead.email || '')}">
+                            <button class="btn btn-sm btn-primary lf-save-email-btn" data-lead-id="${escapedId}">Save</button>
+                        </div>
+                        <div class="quick-add-row">
+                            <input type="text" class="form-control lf-quick-decision-maker" data-lead-id="${escapedId}" placeholder="Decision maker name" value="${escapeHtml(lead.decisionMaker || '')}">
+                            <input type="text" class="form-control lf-quick-decision-title" data-lead-id="${escapedId}" placeholder="Title (e.g. Owner)" value="${escapeHtml(lead.decisionMakerTitle || '')}" style="max-width:140px;">
+                        </div>
+                        <div class="quick-add-row">
+                            <input type="url" class="form-control lf-quick-facebook" data-lead-id="${escapedId}" placeholder="Facebook URL" value="${escapeHtml(lead.facebook || '')}">
+                            <input type="url" class="form-control lf-quick-instagram" data-lead-id="${escapedId}" placeholder="Instagram URL" value="${escapeHtml(lead.instagram || '')}" style="max-width:200px;">
+                        </div>
+                        <div class="quick-add-row">
+                            <input type="url" class="form-control lf-quick-linkedin" data-lead-id="${escapedId}" placeholder="LinkedIn URL" value="${escapeHtml(lead.linkedin || '')}">
+                            <input type="url" class="form-control lf-quick-yelp" data-lead-id="${escapedId}" placeholder="Yelp URL" value="${escapeHtml(lead.yelp || '')}" style="max-width:200px;">
+                        </div>
+                        <button class="btn btn-sm btn-secondary lf-save-contact-info-btn" data-lead-id="${escapedId}">Save All Contact Info</button>
+                    </div>
+                </div>
+            </div>
+        </details>` : '';
 
     const ratingRow = lead.rating
         ? `<div class="info-row"><span class="label">Rating</span> ${'&#9733;'.repeat(Math.round(lead.rating))} ${escapeHtml(String(lead.rating))}/5 (${escapeHtml(String(lead.reviewCount))} reviews)</div>`
@@ -432,18 +650,18 @@ function buildCard(lead, signals, isSaved, showExtras, possibleDup) {
             <h3>${escapeHtml(lead.name)} ${dupBadge}</h3>
             <span class="category-tag">${escapeHtml(lead.category)}</span>
             ${tagsDisplayHtml}
+            ${socialHtml}
             <div class="info-row"><span class="label">Address</span> ${escapeHtml(lead.address)}</div>
             ${ratingRow}
             ${contactHtml}
             <div class="signals">${signalHtml}</div>
             <div class="actions">
                 <a href="${escapeHtml(googleMapsUrl)}" target="_blank" rel="noopener" class="btn btn-outline btn-sm">Maps</a>
-                <a href="https://www.google.com/search?q=${encodeURIComponent(lead.name + ' ' + lead.address)}" target="_blank" rel="noopener" class="btn btn-outline btn-sm">Google It</a>
                 ${lead.website ? `<a href="${escapeHtml(lead.website)}" target="_blank" rel="noopener" class="btn btn-outline btn-sm">Website</a>` : ''}
-                <a href="${escapeHtml(fbSearchUrl)}" target="_blank" rel="noopener" class="btn btn-outline btn-sm">Find Facebook</a>
                 <button class="btn btn-success btn-sm lf-message-btn" data-lead-id="${escapedId}">Message</button>
                 ${tagBtn}
             </div>
+            ${researchPanelHtml}
             ${statusHtml}
             ${notesHtml}
             ${convertBtn}
@@ -727,7 +945,7 @@ function exportCSV() {
     const savedLeads = store.getLeads();
     if (!savedLeads.length) { window.CRM.showToast('No saved leads to export.', 'error'); return; }
 
-    const headers = ['Name', 'Category', 'Address', 'City', 'Rating', 'Reviews', 'Phone', 'Website', 'Score', 'Status', 'Signals', 'Notes', 'Google Maps', 'Saved Date'];
+    const headers = ['Name', 'Category', 'Address', 'City', 'Rating', 'Reviews', 'Phone', 'Email', 'Website', 'Decision Maker', 'Decision Maker Title', 'Facebook', 'Instagram', 'LinkedIn', 'Yelp', 'Score', 'Status', 'Signals', 'Notes', 'Source', 'Google Maps', 'Saved Date'];
     const rows = savedLeads.map(l => {
         const signals = getSignals(l).map(s => s.text).join('; ');
         const score = calculateScore(l);
@@ -739,11 +957,19 @@ function exportCSV() {
             l.rating || 'N/A',
             l.reviewCount,
             l.phone || '',
+            l.email || '',
             l.website || '',
+            l.decisionMaker || '',
+            l.decisionMakerTitle || '',
+            l.facebook || '',
+            l.instagram || '',
+            l.linkedin || '',
+            l.yelp || '',
             score,
             l.status || 'New',
             signals,
             (l.notes || '').replace(/\n/g, ' '),
+            l.source || 'google',
             `https://www.google.com/maps/place/?q=place_id:${l.id}`,
             l.savedAt ? new Date(l.savedAt).toLocaleDateString() : '',
         ];
@@ -870,8 +1096,8 @@ function openTemplateModal(placeId) {
             const subjectMatch = text.match(/^Subject:\s*(.+)/m);
             const subject = subjectMatch ? subjectMatch[1].trim() : `Outreach to ${lead.name}`;
             const body = subjectMatch ? text.replace(/^Subject:\s*.+\n\n?/m, '') : text;
-            const email = lead.phone ? '' : ''; // No email for leads typically
-            const gmailUrl = `https://mail.google.com/mail/?view=cm&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+            const toEmail = lead.email || '';
+            const gmailUrl = `https://mail.google.com/mail/?view=cm&to=${encodeURIComponent(toEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
             window.open(gmailUrl, '_blank');
         });
     }
@@ -886,7 +1112,8 @@ function openTemplateModal(placeId) {
             const subjectMatch = text.match(/^Subject:\s*(.+)/m);
             const subject = subjectMatch ? subjectMatch[1].trim() : `Outreach to ${lead.name}`;
             const body = subjectMatch ? text.replace(/^Subject:\s*.+\n\n?/m, '') : text;
-            const outlookUrl = `https://outlook.live.com/mail/0/deeplink/compose?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+            const toEmailOl = lead.email || '';
+            const outlookUrl = `https://outlook.live.com/mail/0/deeplink/compose?to=${encodeURIComponent(toEmailOl)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
             window.open(outlookUrl, '_blank');
         });
     }
@@ -923,11 +1150,15 @@ function openConvertModal(placeId) {
             </div>
             <div class="search-field">
                 <label>Email</label>
-                <input type="email" id="lf-conv-email" placeholder="Enter email address..." />
+                <input type="email" id="lf-conv-email" value="${escapeHtml(lead.email || '')}" placeholder="Enter email address..." />
             </div>
             <div class="search-field">
                 <label>Website</label>
                 <input type="text" id="lf-conv-website" value="${escapeHtml(lead.website || '')}" />
+            </div>
+            <div class="search-field">
+                <label>Decision Maker</label>
+                <input type="text" id="lf-conv-decision-maker" value="${escapeHtml(lead.decisionMaker || '')}" placeholder="Owner/Manager name" />
             </div>
             <div class="search-field">
                 <label>Address</label>
@@ -1207,12 +1438,13 @@ function bulkExportSelected() {
     const selectedLeads = store.getLeads().filter(l => bulkSelectedIds.has(l.id));
     if (!selectedLeads.length) return;
 
-    const headers = ['Name', 'Category', 'Address', 'City', 'Rating', 'Reviews', 'Phone', 'Website', 'Score', 'Status', 'Notes', 'Saved Date'];
+    const headers = ['Name', 'Category', 'Address', 'City', 'Rating', 'Reviews', 'Phone', 'Email', 'Website', 'Decision Maker', 'Facebook', 'LinkedIn', 'Score', 'Status', 'Notes', 'Saved Date'];
     const rows = selectedLeads.map(l => {
         const score = calculateScore(l);
         return [
             l.name, l.category, l.address, l.city || '', l.rating || 'N/A', l.reviewCount,
-            l.phone || '', l.website || '', score, l.status || 'New',
+            l.phone || '', l.email || '', l.website || '', l.decisionMaker || '',
+            l.facebook || '', l.linkedin || '', score, l.status || 'New',
             (l.notes || '').replace(/\n/g, ' '),
             l.savedAt ? new Date(l.savedAt).toLocaleDateString() : '',
         ];
@@ -1392,6 +1624,82 @@ function attachEvents() {
             return;
         }
 
+        // Hunter.io lookup button
+        const hunterBtn = target.closest('.lf-hunter-btn');
+        if (hunterBtn) {
+            e.preventDefault();
+            hunterLookup(hunterBtn.dataset.leadId, hunterBtn.dataset.domain);
+            return;
+        }
+
+        // Use Hunter email result
+        const useHunterBtn = target.closest('.lf-use-hunter-email');
+        if (useHunterBtn) {
+            e.preventDefault();
+            const leadId = useHunterBtn.dataset.leadId;
+            const email = useHunterBtn.dataset.email;
+            const name = useHunterBtn.dataset.name?.trim();
+            const title = useHunterBtn.dataset.title?.trim();
+            const updates = { email };
+            if (name) updates.decisionMaker = name;
+            if (title) updates.decisionMakerTitle = title;
+            store.updateLead(leadId, updates);
+            window.CRM.showToast(`Email ${email} saved to lead.`);
+            renderSaved();
+            return;
+        }
+
+        // Save email quick-add
+        const saveEmailBtn = target.closest('.lf-save-email-btn');
+        if (saveEmailBtn) {
+            e.preventDefault();
+            const leadId = saveEmailBtn.dataset.leadId;
+            const input = document.querySelector(`.lf-quick-email[data-lead-id="${CSS.escape(leadId)}"]`);
+            if (input && input.value.trim()) {
+                store.updateLead(leadId, { email: input.value.trim() });
+                window.CRM.showToast('Email saved.');
+                renderSaved();
+            }
+            return;
+        }
+
+        // Save all contact info
+        const saveContactInfoBtn = target.closest('.lf-save-contact-info-btn');
+        if (saveContactInfoBtn) {
+            e.preventDefault();
+            const leadId = saveContactInfoBtn.dataset.leadId;
+            const esc = (sel) => {
+                const el = document.querySelector(`${sel}[data-lead-id="${CSS.escape(leadId)}"]`);
+                return el ? el.value.trim() : '';
+            };
+            const updates = {
+                email: esc('.lf-quick-email') || undefined,
+                decisionMaker: esc('.lf-quick-decision-maker') || undefined,
+                decisionMakerTitle: esc('.lf-quick-decision-title') || undefined,
+                facebook: esc('.lf-quick-facebook') || undefined,
+                instagram: esc('.lf-quick-instagram') || undefined,
+                linkedin: esc('.lf-quick-linkedin') || undefined,
+                yelp: esc('.lf-quick-yelp') || undefined,
+            };
+            // Remove undefined keys
+            Object.keys(updates).forEach(k => { if (updates[k] === undefined) delete updates[k]; });
+            if (Object.keys(updates).length) {
+                store.updateLead(leadId, updates);
+                window.CRM.showToast('Contact info saved.');
+                renderSaved();
+            } else {
+                window.CRM.showToast('No info to save.', 'info');
+            }
+            return;
+        }
+
+        // Yelp search button
+        if (target.id === 'lf-yelpSearchBtn' || target.closest('#lf-yelpSearchBtn')) {
+            e.preventDefault();
+            yelpSearch();
+            return;
+        }
+
         // Tag button on lead card
         const tagBtn = target.closest('.lf-tag-btn');
         if (tagBtn) {
@@ -1564,7 +1872,10 @@ export function render() {
                 </div>
                 <div class="search-field" style="flex:0; min-width: auto;">
                     <label>&nbsp;</label>
-                    <button class="btn btn-primary" id="lf-searchBtn">Search</button>
+                    <div style="display:flex;gap:0.4rem;">
+                        <button class="btn btn-primary" id="lf-searchBtn">Search</button>
+                        <button class="btn btn-outline" id="lf-yelpSearchBtn" title="Search Yelp (requires Yelp API key)">Yelp</button>
+                    </div>
                 </div>
             </div>
             <div style="margin-top:0.75rem;">

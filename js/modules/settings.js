@@ -68,6 +68,40 @@ export function render() {
         </div>
 
         <div class="card settings-card">
+            <h3>Hunter.io API Key</h3>
+            <p class="text-muted">Used to find email addresses from business websites. Free tier: 25 lookups/month.</p>
+            <div class="form-group">
+                <input type="text" id="settings-hunter-key" class="form-control" value="${escapeHtml(maskApiKey(settings.hunterApiKey || ''))}" placeholder="Enter your Hunter.io API key">
+            </div>
+            <button class="btn btn-primary" id="btn-update-hunter-key">Update Key</button>
+            <div class="settings-instructions">
+                <p><strong>How to get an API key:</strong></p>
+                <ol>
+                    <li>Go to <a href="https://hunter.io/users/sign_up" target="_blank" rel="noopener">hunter.io</a> and create a free account</li>
+                    <li>Go to your <strong>API</strong> page in account settings</li>
+                    <li>Copy your API key and paste it above</li>
+                </ol>
+            </div>
+        </div>
+
+        <div class="card settings-card">
+            <h3>Yelp Fusion API Key</h3>
+            <p class="text-muted">Used as an alternative source for finding businesses. Free: 5,000 calls/day.</p>
+            <div class="form-group">
+                <input type="text" id="settings-yelp-key" class="form-control" value="${escapeHtml(maskApiKey(settings.yelpApiKey || ''))}" placeholder="Enter your Yelp Fusion API key">
+            </div>
+            <button class="btn btn-primary" id="btn-update-yelp-key">Update Key</button>
+            <div class="settings-instructions">
+                <p><strong>How to get an API key:</strong></p>
+                <ol>
+                    <li>Go to <a href="https://www.yelp.com/developers" target="_blank" rel="noopener">Yelp for Developers</a></li>
+                    <li>Create an app to get your API key</li>
+                    <li>Copy the key and paste it above</li>
+                </ol>
+            </div>
+        </div>
+
+        <div class="card settings-card">
             <h3>Business Profile</h3>
             <div class="form-group">
                 <label for="settings-user-name">Your Name</label>
@@ -180,6 +214,44 @@ function handleUpdateApiKey() {
         window.CRM.showToast('New API key will be used on next search.', 'info');
     }
 
+    render();
+}
+
+// ---- Hunter.io Key Update ----
+
+function handleUpdateHunterKey() {
+    const input = document.getElementById('settings-hunter-key');
+    if (!input) return;
+    const rawValue = input.value.trim();
+    if (/^[\u2022]+/.test(rawValue) && rawValue.length > 4) {
+        const currentKey = store.getSettings().hunterApiKey || '';
+        if (rawValue.slice(-4) === currentKey.slice(-4)) {
+            window.CRM.showToast('Hunter.io key unchanged.', 'info');
+            return;
+        }
+    }
+    if (!rawValue) { window.CRM.showToast('Please enter an API key.', 'error'); return; }
+    store.updateSettings({ hunterApiKey: rawValue });
+    window.CRM.showToast('Hunter.io API key updated.');
+    render();
+}
+
+// ---- Yelp Key Update ----
+
+function handleUpdateYelpKey() {
+    const input = document.getElementById('settings-yelp-key');
+    if (!input) return;
+    const rawValue = input.value.trim();
+    if (/^[\u2022]+/.test(rawValue) && rawValue.length > 4) {
+        const currentKey = store.getSettings().yelpApiKey || '';
+        if (rawValue.slice(-4) === currentKey.slice(-4)) {
+            window.CRM.showToast('Yelp key unchanged.', 'info');
+            return;
+        }
+    }
+    if (!rawValue) { window.CRM.showToast('Please enter an API key.', 'error'); return; }
+    store.updateSettings({ yelpApiKey: rawValue });
+    window.CRM.showToast('Yelp Fusion API key updated.');
     render();
 }
 
@@ -309,6 +381,16 @@ export function init() {
 
         if (target.id === 'btn-update-api-key' || target.closest('#btn-update-api-key')) {
             handleUpdateApiKey();
+            return;
+        }
+
+        if (target.id === 'btn-update-hunter-key' || target.closest('#btn-update-hunter-key')) {
+            handleUpdateHunterKey();
+            return;
+        }
+
+        if (target.id === 'btn-update-yelp-key' || target.closest('#btn-update-yelp-key')) {
+            handleUpdateYelpKey();
             return;
         }
 

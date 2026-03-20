@@ -74,7 +74,7 @@ export const store = {
     cache.deals = load(KEYS.deals, []);
     cache.activities = load(KEYS.activities, []);
     cache.tasks = load(KEYS.tasks, []);
-    cache.settings = load(KEYS.settings, { apiKey: '', userName: '', businessName: '' });
+    cache.settings = load(KEYS.settings, { apiKey: '', userName: '', businessName: '', hunterApiKey: '', yelpApiKey: '' });
     cache.notes = load(KEYS.notes, []);
     cache.tags = load(KEYS.tags, []);
 
@@ -167,6 +167,16 @@ export const store = {
       convertedToContactId: lead.convertedToContactId || null,
       tags: lead.tags || [],
       lastActivityAt: lead.lastActivityAt || null,
+      // Enhanced contact fields
+      email: lead.email || '',
+      facebook: lead.facebook || '',
+      instagram: lead.instagram || '',
+      linkedin: lead.linkedin || '',
+      yelp: lead.yelp || '',
+      decisionMaker: lead.decisionMaker || '',
+      decisionMakerTitle: lead.decisionMakerTitle || '',
+      source: lead.source || 'google',
+      hunterResults: lead.hunterResults || null,
     };
     cache.leads.push(entry);
     persist('leads');
