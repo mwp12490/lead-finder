@@ -190,7 +190,14 @@ function loadGoogleMaps(apiKey) {
     const s = document.createElement('script');
     s.id = 'gmaps-script';
     s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
-    s.onerror = () => window.CRM.showToast('Failed to load Google Maps. Check your API key.', 'error');
+    s.onerror = () => {
+        // Remove the failed script so we can retry
+        s.remove();
+        window.CRM.showToast('Failed to load Google Maps. Check your API key and internet connection.', 'error');
+    };
+    s.onload = () => {
+        console.log('Google Maps API loaded successfully');
+    };
     document.head.appendChild(s);
 }
 
@@ -222,20 +229,33 @@ function formatPlace(place, category, city) {
 
 function enrichSingleLead(service, lead) {
     return new Promise(resolve => {
-        service.getDetails({
-            placeId: lead.id,
-            fields: ['formatted_phone_number', 'website', 'opening_hours'],
-        }, (place, status) => {
-            if (status === google.maps.places.PlacesServiceStatus.OK && place) {
-                lead.phone = place.formatted_phone_number || null;
-                lead.website = place.website || null;
-                lead.hours = place.opening_hours && place.opening_hours.weekday_text
-                    ? place.opening_hours.weekday_text.join(', ')
-                    : null;
-            }
+        // Timeout per-lead enrichment after 8 seconds
+        const timeout = setTimeout(() => {
             lead.enriched = true;
             resolve();
-        });
+        }, 8000);
+
+        try {
+            service.getDetails({
+                placeId: lead.id,
+                fields: ['formatted_phone_number', 'website', 'opening_hours'],
+            }, (place, status) => {
+                clearTimeout(timeout);
+                if (status === google.maps.places.PlacesServiceStatus.OK && place) {
+                    lead.phone = place.formatted_phone_number || null;
+                    lead.website = place.website || null;
+                    lead.hours = place.opening_hours && place.opening_hours.weekday_text
+                        ? place.opening_hours.weekday_text.join(', ')
+                        : null;
+                }
+                lead.enriched = true;
+                resolve();
+            });
+        } catch (err) {
+            clearTimeout(timeout);
+            lead.enriched = true;
+            resolve();
+        }
     });
 }
 
@@ -243,11 +263,16 @@ async function enrichResults(service) {
     const notice = document.getElementById('lf-enrichingNotice');
     if (notice) notice.style.display = 'inline';
 
-    const batchSize = 5;
+    // Process in batches of 3 with a small delay to avoid rate limiting
+    const batchSize = 3;
     for (let i = 0; i < currentResults.length; i += batchSize) {
         const batch = currentResults.slice(i, i + batchSize);
         await Promise.all(batch.map(lead => enrichSingleLead(service, lead)));
         renderResultsGrid();
+        // Small delay between batches to avoid hitting Google rate limits
+        if (i + batchSize < currentResults.length) {
+            await new Promise(r => setTimeout(r, 300));
+        }
     }
 
     if (notice) notice.style.display = 'none';
@@ -272,6 +297,14 @@ function searchBusinesses() {
     const settings = store.getSettings();
     if (!settings.apiKey) { window.CRM.showToast('Please set up your Google API key first.', 'error'); return; }
 
+    // Check if Google Maps is actually loaded before trying to use it
+    if (typeof google === 'undefined' || !google.maps || !google.maps.places) {
+        window.CRM.showToast('Google Maps is still loading. Please wait a moment and try again.', 'error');
+        // Try reloading the script
+        loadGoogleMaps(settings.apiKey);
+        return;
+    }
+
     searchBtn.disabled = true;
     searchBtn.textContent = 'Searching...';
 
@@ -281,41 +314,82 @@ function searchBusinesses() {
     // Make sure we show results tab
     switchLeadTab('results');
 
-    const geocoder = new google.maps.Geocoder();
-    geocoder.geocode({ address: location }, (results, status) => {
-        if (status !== 'OK' || !results[0]) {
+    // Safety timeout — if Google never calls back, reset UI after 30 seconds
+    const searchTimeout = setTimeout(() => {
+        if (searchBtn.disabled) {
             searchBtn.disabled = false;
             searchBtn.textContent = 'Search';
-            resultsContainer.innerHTML = '<div class="empty-state"><h3>Location not found</h3><p>Try a more specific location like "Austin, TX" or a ZIP code.</p></div>';
-            return;
+            resultsContainer.innerHTML = '<div class="empty-state"><h3>Search timed out</h3><p>Google Places API took too long to respond. This can happen with large search areas. Try a smaller radius or check your API key permissions.</p></div>';
+            window.CRM.showToast('Search timed out. Try a smaller radius.', 'error');
         }
+    }, 30000);
 
-        const loc = results[0].geometry.location;
-        const searchCity = results[0].address_components.find(c => c.types.includes('locality'));
-        const cityName = searchCity ? searchCity.long_name : location;
-
-        const service = new google.maps.places.PlacesService(document.createElement('div'));
-        const radiusMeters = radiusMiles * 1609.34;
-
-        service.nearbySearch({
-            location: loc,
-            radius: Math.min(radiusMeters, 50000),
-            keyword: category,
-            type: 'establishment',
-        }, (places, searchStatus) => {
-            searchBtn.disabled = false;
-            searchBtn.textContent = 'Search';
-
-            if (searchStatus !== google.maps.places.PlacesServiceStatus.OK || !places.length) {
-                resultsContainer.innerHTML = '<div class="empty-state"><h3>No results found</h3><p>Try a different category or expand your search radius.</p></div>';
+    try {
+        const geocoder = new google.maps.Geocoder();
+        geocoder.geocode({ address: location }, (results, status) => {
+            if (status !== 'OK' || !results[0]) {
+                clearTimeout(searchTimeout);
+                searchBtn.disabled = false;
+                searchBtn.textContent = 'Search';
+                const msg = status === 'OVER_QUERY_LIMIT'
+                    ? 'API quota exceeded. Try again later or check your Google API billing.'
+                    : status === 'REQUEST_DENIED'
+                    ? 'API request denied. Check that your Google API key has Geocoding API enabled.'
+                    : 'Location not found. Try a more specific location like "Austin, TX" or a ZIP code.';
+                resultsContainer.innerHTML = `<div class="empty-state"><h3>${status === 'OK' ? 'Location not found' : 'Geocoding Error'}</h3><p>${msg}</p></div>`;
                 return;
             }
 
-            currentResults = places.map(p => formatPlace(p, category, cityName));
-            renderResultsGrid();
-            enrichResults(service);
+            const loc = results[0].geometry.location;
+            const searchCity = results[0].address_components.find(c => c.types.includes('locality'));
+            const cityName = searchCity ? searchCity.long_name : location;
+
+            const service = new google.maps.places.PlacesService(document.createElement('div'));
+            const radiusMeters = radiusMiles * 1609.34;
+
+            service.nearbySearch({
+                location: loc,
+                radius: Math.min(radiusMeters, 50000),
+                keyword: category,
+                type: 'establishment',
+            }, (places, searchStatus, pagination) => {
+                clearTimeout(searchTimeout);
+                searchBtn.disabled = false;
+                searchBtn.textContent = 'Search';
+
+                if (searchStatus === google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
+                    resultsContainer.innerHTML = '<div class="empty-state"><h3>No results found</h3><p>No businesses matched that category in this area. Try a broader category or larger radius.</p></div>';
+                    return;
+                }
+
+                if (searchStatus === google.maps.places.PlacesServiceStatus.OVER_QUERY_LIMIT) {
+                    resultsContainer.innerHTML = '<div class="empty-state"><h3>API Quota Exceeded</h3><p>You\'ve hit the Google Places API rate limit. Wait a minute and try again, or check your billing dashboard.</p></div>';
+                    return;
+                }
+
+                if (searchStatus === google.maps.places.PlacesServiceStatus.REQUEST_DENIED) {
+                    resultsContainer.innerHTML = '<div class="empty-state"><h3>API Request Denied</h3><p>Your Google API key may not have the Places API enabled. Go to the <a href="https://console.cloud.google.com/apis/library/places-backend.googleapis.com" target="_blank" style="color:var(--accent-primary);">Google Cloud Console</a> and enable it.</p></div>';
+                    return;
+                }
+
+                if (searchStatus !== google.maps.places.PlacesServiceStatus.OK || !places || !places.length) {
+                    resultsContainer.innerHTML = '<div class="empty-state"><h3>No results found</h3><p>Try a different category or expand your search radius.</p></div>';
+                    return;
+                }
+
+                currentResults = places.map(p => formatPlace(p, category, cityName));
+                renderResultsGrid();
+                // Enrich in background — don't block the UI
+                enrichResults(service);
+            });
         });
-    });
+    } catch (err) {
+        clearTimeout(searchTimeout);
+        searchBtn.disabled = false;
+        searchBtn.textContent = 'Search';
+        console.error('Search error:', err);
+        resultsContainer.innerHTML = `<div class="empty-state"><h3>Search Error</h3><p>${escapeHtml(err.message || 'An unexpected error occurred. Check the browser console for details.')}</p></div>`;
+    }
 }
 
 // ── Sorting ──
