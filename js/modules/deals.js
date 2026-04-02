@@ -51,6 +51,35 @@ function pipelineValue() {
     .reduce((sum, d) => sum + (Number(d.value) || 0), 0);
 }
 
+// ---- Deal Summary Stats ----
+
+function renderSummaryStats() {
+  const deals = store.getDeals();
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const pipeline = deals.filter(d => d.stage !== 'Closed Won' && d.stage !== 'Closed Lost');
+  const pipelineTotal = pipeline.reduce((s, d) => s + (Number(d.value) || 0), 0);
+  const wonThisMonth = deals.filter(d => d.stage === 'Closed Won' && d.closedAt && d.closedAt >= monthStart);
+  const wonTotal = wonThisMonth.reduce((s, d) => s + (Number(d.value) || 0), 0);
+  const lostThisMonth = deals.filter(d => d.stage === 'Closed Lost' && d.closedAt && d.closedAt >= monthStart);
+  const allValues = deals.filter(d => Number(d.value) > 0).map(d => Number(d.value));
+  const avgDeal = allValues.length > 0 ? allValues.reduce((a, b) => a + b, 0) / allValues.length : 0;
+
+  const statCard = (label, value, color) => `
+    <div style="flex:1;min-width:150px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;">
+      <div style="font-size:0.75rem;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">${label}</div>
+      <div style="font-size:1.25rem;font-weight:700;color:${color};">${value}</div>
+    </div>`;
+
+  return `
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+      ${statCard('Pipeline Value', formatCurrency(pipelineTotal), '#2563eb')}
+      ${statCard('Won This Month', `${wonThisMonth.length} deals &middot; ${formatCurrency(wonTotal)}`, '#22c55e')}
+      ${statCard('Lost This Month', `${lostThisMonth.length} deals`, '#ef4444')}
+      ${statCard('Avg Deal Size', formatCurrency(avgDeal), '#6b7280')}
+    </div>`;
+}
+
 // ---- Kanban View ----
 
 function renderKanban() {
@@ -284,6 +313,89 @@ function handleDealFormSubmit(form) {
 
 // ---- Deal Detail ----
 
+function renderProposalSection(deal) {
+  const sent = deal.proposalSent;
+  const statusText = sent
+    ? `<span style="color:#22c55e;font-weight:500;">Sent on ${formatDate(deal.proposalDate)}</span>`
+    : '<span style="color:#9ca3af;">Not Sent</span>';
+
+  return `
+    <div style="margin-top:16px;padding:12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <h4 style="margin:0;font-size:0.95rem;">Proposal</h4>
+        <div style="display:flex;gap:6px;">
+          ${!sent ? `<button class="btn-send-proposal" data-deal-id="${escapeHtml(deal.id)}" style="padding:4px 12px;font-size:0.75rem;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer;">Send Proposal</button>` : ''}
+          <button class="btn-generate-ai-proposal" style="padding:4px 12px;font-size:0.75rem;background:#8b5cf6;color:#fff;border:none;border-radius:4px;cursor:pointer;">Generate with AI</button>
+        </div>
+      </div>
+      <div style="font-size:0.85rem;">Status: ${statusText}</div>
+    </div>`;
+}
+
+function renderPaymentSection(deal) {
+  const payments = (typeof store.getPaymentsForDeal === 'function') ? store.getPaymentsForDeal(deal.id) : [];
+  const totalValue = Number(deal.value) || 0;
+  const amountPaid = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  const remaining = Math.max(0, totalValue - amountPaid);
+  const pctPaid = totalValue > 0 ? Math.min(100, Math.round((amountPaid / totalValue) * 100)) : 0;
+
+  const paymentRows = payments.length > 0
+    ? payments.sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(p => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f3f4f6;font-size:0.85rem;">
+          <div>
+            <span style="font-weight:500;">${formatCurrency(p.amount)}</span>
+            <span style="color:#6b7280;margin-left:8px;">${escapeHtml(p.method || '')}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="color:#6b7280;font-size:0.75rem;">${p.date ? formatDate(p.date) : ''}</span>
+            <button class="btn-remove-payment" data-payment-id="${escapeHtml(p.id)}" data-deal-id="${escapeHtml(deal.id)}" style="padding:2px 6px;font-size:0.7rem;background:#fef2f2;color:#ef4444;border:1px solid #fecaca;border-radius:4px;cursor:pointer;">&times;</button>
+          </div>
+        </div>
+        ${p.notes ? `<div style="font-size:0.75rem;color:#6b7280;padding:2px 0 6px 0;">${escapeHtml(p.notes)}</div>` : ''}
+      `).join('')
+    : '<div style="color:#9ca3af;font-size:0.85rem;padding:6px 0;">No payments recorded.</div>';
+
+  return `
+    <div style="margin-top:16px;padding:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <h4 style="margin:0;font-size:0.95rem;">Payments</h4>
+        <button class="btn-record-payment" data-deal-id="${escapeHtml(deal.id)}" style="padding:4px 12px;font-size:0.75rem;background:#22c55e;color:#fff;border:none;border-radius:4px;cursor:pointer;">Record Payment</button>
+      </div>
+      <div style="display:flex;gap:16px;font-size:0.85rem;margin-bottom:8px;">
+        <div>Total: <strong>${formatCurrency(totalValue)}</strong></div>
+        <div>Paid: <strong style="color:#22c55e;">${formatCurrency(amountPaid)}</strong></div>
+        <div>Remaining: <strong style="color:#ef4444;">${formatCurrency(remaining)}</strong></div>
+      </div>
+      <div style="background:#e5e7eb;border-radius:9999px;height:8px;margin-bottom:10px;overflow:hidden;">
+        <div style="background:#22c55e;height:100%;width:${pctPaid}%;border-radius:9999px;transition:width 0.3s;"></div>
+      </div>
+      <div style="font-size:0.75rem;color:#6b7280;margin-bottom:8px;">${pctPaid}% paid</div>
+      <div id="payment-form-container"></div>
+      ${paymentRows}
+    </div>`;
+}
+
+function renderConvertToProjectSection(deal) {
+  if (deal.stage !== 'Closed Won') return '';
+  const existingProjects = (typeof store.getProjectsForDeal === 'function') ? store.getProjectsForDeal(deal.id) : [];
+  const hasProject = existingProjects.length > 0;
+
+  if (hasProject) {
+    return `
+      <div style="margin-top:16px;padding:12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="color:#22c55e;font-size:1.1rem;">&#10003;</span>
+          <span style="font-size:0.85rem;font-weight:500;">Project created: ${escapeHtml(existingProjects[0].name || deal.name)}</span>
+        </div>
+      </div>`;
+  }
+
+  return `
+    <div style="margin-top:16px;">
+      <button class="btn-create-project" data-deal-id="${escapeHtml(deal.id)}" style="width:100%;padding:10px 16px;background:#2563eb;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:0.9rem;font-weight:600;">Create Project from Deal</button>
+    </div>`;
+}
+
 function openDealDetail(dealId) {
   const deal = store.getDealById(dealId);
   if (!deal) return;
@@ -324,6 +436,10 @@ function openDealDetail(dealId) {
       ${deal.expectedCloseDate ? `<div style="font-size:0.85rem;color:#6b7280;margin-bottom:4px;">Expected Close: ${formatDate(deal.expectedCloseDate)}</div>` : ''}
       ${deal.services && deal.services.length ? `<div style="margin-bottom:8px;">${servicePills(deal.services)}</div>` : ''}
       ${deal.notes ? `<div style="font-size:0.85rem;color:#374151;background:#f9fafb;padding:8px 12px;border-radius:6px;margin-bottom:12px;">${escapeHtml(deal.notes)}</div>` : ''}
+
+      ${renderProposalSection(deal)}
+      ${renderPaymentSection(deal)}
+      ${renderConvertToProjectSection(deal)}
 
       <div style="margin-top:16px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
@@ -434,6 +550,106 @@ function openCloseReasonModal(dealId, newStage) {
   window.CRM.showModal(title, html);
 }
 
+// ---- Record Payment Inline Form ----
+
+function showRecordPaymentForm(dealId) {
+  const deal = store.getDealById(dealId);
+  if (!deal) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const methods = ['Cash', 'Check', 'Card', 'Bank Transfer', 'PayPal', 'Other'];
+  const methodOptions = methods.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
+
+  const html = `
+    <form id="record-payment-form" data-deal-id="${escapeHtml(dealId)}" data-contact-id="${escapeHtml(deal.contactId || '')}">
+      <div style="display:flex;flex-direction:column;gap:10px;padding:10px;background:#fff;border:1px solid #d1d5db;border-radius:6px;margin-bottom:8px;">
+        <div style="display:flex;gap:8px;">
+          <div style="flex:1;">
+            <label style="display:block;font-weight:500;margin-bottom:2px;font-size:0.75rem;">Amount *</label>
+            <input type="number" name="amount" min="0" step="0.01" required style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:4px;font-size:0.85rem;">
+          </div>
+          <div style="flex:1;">
+            <label style="display:block;font-weight:500;margin-bottom:2px;font-size:0.75rem;">Date *</label>
+            <input type="date" name="date" value="${today}" required style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:4px;font-size:0.85rem;">
+          </div>
+        </div>
+        <div>
+          <label style="display:block;font-weight:500;margin-bottom:2px;font-size:0.75rem;">Payment Method</label>
+          <select name="method" style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:4px;font-size:0.85rem;">
+            ${methodOptions}
+          </select>
+        </div>
+        <div>
+          <label style="display:block;font-weight:500;margin-bottom:2px;font-size:0.75rem;">Notes</label>
+          <input type="text" name="notes" placeholder="Optional notes..." style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:4px;font-size:0.85rem;">
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:6px;">
+          <button type="button" class="btn-cancel-payment" style="padding:5px 12px;font-size:0.8rem;background:#f3f4f6;color:#374151;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;">Cancel</button>
+          <button type="submit" style="padding:5px 12px;font-size:0.8rem;background:#22c55e;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:500;">Save Payment</button>
+        </div>
+      </div>
+    </form>`;
+
+  const container = document.getElementById('payment-form-container');
+  if (container) {
+    container.innerHTML = html;
+  }
+}
+
+// ---- Create Project Modal ----
+
+function openCreateProjectModal(dealId) {
+  const deal = store.getDealById(dealId);
+  if (!deal) return;
+  const contact = store.getContactById(deal.contactId);
+  const contactName = contact ? (contact.name || contact.businessName || 'Unnamed') : '';
+  const today = new Date().toISOString().slice(0, 10);
+
+  const serviceChecks = SERVICES.map(s => {
+    const checked = deal.services && deal.services.includes(s) ? 'checked' : '';
+    return `<label style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-size:0.85rem;"><input type="checkbox" name="services" value="${escapeHtml(s)}" ${checked}> ${escapeHtml(s)}</label>`;
+  }).join('');
+
+  const html = `
+    <form id="create-project-form" data-deal-id="${escapeHtml(deal.id)}" data-contact-id="${escapeHtml(deal.contactId || '')}">
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div>
+          <label style="display:block;font-weight:500;margin-bottom:4px;font-size:0.85rem;">Project Name *</label>
+          <input type="text" name="name" value="${escapeHtml(deal.name)}" required style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;">
+        </div>
+        <div>
+          <label style="display:block;font-weight:500;margin-bottom:4px;font-size:0.85rem;">Contact</label>
+          <input type="text" value="${escapeHtml(contactName)}" disabled style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;background:#f9fafb;">
+        </div>
+        <div>
+          <label style="display:block;font-weight:500;margin-bottom:4px;font-size:0.85rem;">Value</label>
+          <input type="number" name="value" min="0" step="0.01" value="${deal.value || ''}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;">
+        </div>
+        <div>
+          <label style="display:block;font-weight:500;margin-bottom:4px;font-size:0.85rem;">Services</label>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;">${serviceChecks}</div>
+        </div>
+        <div>
+          <label style="display:block;font-weight:500;margin-bottom:4px;font-size:0.85rem;">Start Date</label>
+          <input type="date" name="startDate" value="${today}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;">
+        </div>
+        <div>
+          <label style="display:block;font-weight:500;margin-bottom:4px;font-size:0.85rem;">Due Date</label>
+          <input type="date" name="dueDate" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;">
+        </div>
+        <div>
+          <label style="display:block;font-weight:500;margin-bottom:4px;font-size:0.85rem;">Notes</label>
+          <textarea name="notes" rows="3" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;resize:vertical;">${escapeHtml(deal.notes || '')}</textarea>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;">
+          <button type="button" class="btn-cancel-project" style="padding:8px 16px;background:#f3f4f6;color:#374151;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;">Cancel</button>
+          <button type="submit" style="padding:8px 20px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:500;">Create Project</button>
+        </div>
+      </div>
+    </form>`;
+
+  window.CRM.showModal('Create Project from Deal', html);
+}
+
 // ---- Render ----
 
 export function render() {
@@ -441,7 +657,7 @@ export function render() {
   if (!container) return;
 
   const body = currentView === 'kanban' ? renderKanban() : renderList();
-  container.innerHTML = renderHeader() + body;
+  container.innerHTML = renderHeader() + renderSummaryStats() + body;
 }
 
 // ---- Event Delegation ----
@@ -547,6 +763,76 @@ export function init() {
       return;
     }
 
+    // Send Proposal button
+    const proposalBtn = target.closest('.btn-send-proposal');
+    if (proposalBtn) {
+      const dealId = proposalBtn.dataset.dealId;
+      store.updateDeal(dealId, { proposalSent: true, proposalDate: new Date().toISOString() });
+      window.CRM.showToast('Proposal marked as sent');
+      window.CRM.closeModal();
+      openDealDetail(dealId);
+      return;
+    }
+
+    // Generate AI Proposal button
+    if (target.closest('.btn-generate-ai-proposal')) {
+      window.CRM.closeModal();
+      if (window.CRM.navigate) {
+        window.CRM.navigate('ai');
+      } else {
+        window.location.hash = '#ai';
+      }
+      return;
+    }
+
+    // Record Payment button (shows inline form)
+    const recordPayBtn = target.closest('.btn-record-payment');
+    if (recordPayBtn) {
+      showRecordPaymentForm(recordPayBtn.dataset.dealId);
+      return;
+    }
+
+    // Cancel payment inline form
+    if (target.closest('.btn-cancel-payment')) {
+      const container = document.getElementById('payment-form-container');
+      if (container) container.innerHTML = '';
+      return;
+    }
+
+    // Remove Payment button
+    const removePayBtn = target.closest('.btn-remove-payment');
+    if (removePayBtn) {
+      const paymentId = removePayBtn.dataset.paymentId;
+      const dealId = removePayBtn.dataset.dealId;
+      if (typeof store.removePayment === 'function') {
+        store.removePayment(paymentId);
+      }
+      window.CRM.showToast('Payment removed');
+      window.CRM.closeModal();
+      openDealDetail(dealId);
+      return;
+    }
+
+    // Create Project button
+    const createProjBtn = target.closest('.btn-create-project');
+    if (createProjBtn) {
+      const dealId = createProjBtn.dataset.dealId;
+      if (window.CRM && window.CRM.openCreateProjectFromDeal) {
+        window.CRM.closeModal();
+        window.CRM.openCreateProjectFromDeal(dealId);
+      } else {
+        window.CRM.closeModal();
+        openCreateProjectModal(dealId);
+      }
+      return;
+    }
+
+    // Cancel project form
+    if (target.closest('.btn-cancel-project')) {
+      window.CRM.closeModal();
+      return;
+    }
+
     // Cancel buttons in modals
     if (target.closest('.btn-cancel-deal') || target.closest('.btn-cancel-activity') || target.closest('.btn-cancel-close-reason')) {
       window.CRM.closeModal();
@@ -569,6 +855,64 @@ export function init() {
       return;
     }
 
+    if (e.target.id === 'record-payment-form') {
+      e.preventDefault();
+      const form = e.target;
+      const dealId = form.dataset.dealId;
+      const contactId = form.dataset.contactId;
+      const amount = parseFloat(form.amount.value);
+      if (!amount || amount <= 0) {
+        window.CRM.showToast('Please enter a valid amount.', 'error');
+        return;
+      }
+      if (typeof store.addPayment === 'function') {
+        store.addPayment({
+          dealId,
+          contactId: contactId || null,
+          amount,
+          date: form.date.value || new Date().toISOString().slice(0, 10),
+          method: form.method.value,
+          notes: form.notes.value.trim(),
+        });
+      }
+      window.CRM.showToast('Payment recorded');
+      window.CRM.closeModal();
+      openDealDetail(dealId);
+      return;
+    }
+
+    if (e.target.id === 'create-project-form') {
+      e.preventDefault();
+      const form = e.target;
+      const dealId = form.dataset.dealId;
+      const contactId = form.dataset.contactId;
+      const services = Array.from(form.querySelectorAll('input[name="services"]:checked')).map(cb => cb.value);
+      const projectData = {
+        name: form.name.value.trim(),
+        dealId,
+        contactId: contactId || null,
+        status: 'Not Started',
+        services,
+        value: parseFloat(form.value.value) || 0,
+        startDate: form.startDate.value || null,
+        dueDate: form.dueDate.value || null,
+        notes: form.notes.value.trim(),
+        milestones: [],
+        checklist: [],
+      };
+      if (!projectData.name) {
+        window.CRM.showToast('Please enter a project name.', 'error');
+        return;
+      }
+      if (typeof store.addProject === 'function') {
+        store.addProject(projectData);
+      }
+      window.CRM.showToast('Project created');
+      window.CRM.closeModal();
+      render();
+      return;
+    }
+
     if (e.target.id === 'close-reason-form') {
       e.preventDefault();
       const form = e.target;
@@ -580,7 +924,7 @@ export function init() {
         window.CRM.showToast('Please select a reason.', 'error');
         return;
       }
-      store.updateDeal(dealId, { stage, closeReason, closeNotes });
+      store.updateDeal(dealId, { stage, closeReason, closeNotes, closedAt: new Date().toISOString() });
       window.CRM.showToast(`Deal moved to ${stage}`);
       window.CRM.closeModal();
       render();

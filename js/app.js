@@ -1,6 +1,6 @@
 /**
  * Business CRM - Main Application Orchestrator
- * Handles routing, module loading, toasts, and modals.
+ * Handles routing, module loading, toasts, modals, setup wizard, and help tooltips.
  */
 
 import { store } from './modules/store.js';
@@ -9,8 +9,6 @@ const modules = {};
 
 /**
  * Dynamically load all section modules.
- * Each module is wrapped in try-catch so the app works
- * even when individual modules have not been created yet.
  */
 async function loadModules() {
     const moduleMap = {
@@ -18,7 +16,9 @@ async function loadModules() {
         leads:      './modules/leadFinder.js',
         contacts:   './modules/contacts.js',
         deals:      './modules/deals.js',
+        projects:   './modules/projects.js',
         tasks:      './modules/tasks.js',
+        ai:         './modules/ai.js',
         calendar:   './modules/calendar.js',
         reports:    './modules/reports.js',
         settings:   './modules/settings.js',
@@ -29,7 +29,7 @@ async function loadModules() {
             const m = await import(path);
             modules[name] = m;
         } catch (e) {
-            // Module not yet implemented -- silently skip
+            console.warn(`Module "${name}" not loaded:`, e.message);
         }
     });
 
@@ -51,12 +51,7 @@ async function loadModules() {
 // Routing
 // ---------------------------------------------------------------------------
 
-/**
- * Navigate to a hash-based section.
- * Hides all sections, shows the target, updates sidebar active state,
- * and calls the section module's render() if available.
- */
-export function navigate(hash) {
+export function navigate(hash, entityId) {
     const section = hash.replace('#', '') || 'dashboard';
 
     // Hide all sections
@@ -80,22 +75,20 @@ export function navigate(hash) {
     // Call the section's render function
     if (modules[section] && typeof modules[section].render === 'function') {
         try {
-            modules[section].render();
+            modules[section].render(entityId);
         } catch (e) {
             console.error(`Failed to render module "${section}":`, e);
         }
     }
+
+    // Update pipeline progress in sidebar
+    updatePipelineProgress();
 }
 
 // ---------------------------------------------------------------------------
 // Toast Notifications
 // ---------------------------------------------------------------------------
 
-/**
- * Display a temporary toast notification.
- * @param {string} message - Text to display.
- * @param {'success'|'error'|'warning'|'info'} type - Visual style.
- */
 export function showToast(message, type = 'success') {
     const container = document.getElementById('toastContainer');
     if (!container) return;
@@ -106,16 +99,13 @@ export function showToast(message, type = 'success') {
 
     container.appendChild(toast);
 
-    // Trigger entrance animation on next frame
     requestAnimationFrame(() => {
         toast.classList.add('toast-visible');
     });
 
-    // Auto-remove after 3 seconds
     setTimeout(() => {
         toast.classList.remove('toast-visible');
         toast.addEventListener('transitionend', () => toast.remove(), { once: true });
-        // Fallback removal if transitionend never fires
         setTimeout(() => {
             if (toast.parentNode) toast.remove();
         }, 400);
@@ -126,15 +116,20 @@ export function showToast(message, type = 'success') {
 // Modal System
 // ---------------------------------------------------------------------------
 
-/**
- * Show a modal dialog with the provided HTML content.
- * @param {string} contentHtml - Inner HTML for the modal body.
- */
-export function showModal(contentHtml) {
+export function showModal(titleOrHtml, contentHtml) {
     const container = document.getElementById('modalContainer');
     if (!container) return;
 
-    // Remove any existing modal first
+    // Backwards compat: if called with one arg, treat it as contentHtml with no title
+    let title = '';
+    let bodyHtml = contentHtml;
+    if (contentHtml === undefined) {
+        bodyHtml = titleOrHtml;
+        title = '';
+    } else {
+        title = titleOrHtml || '';
+    }
+
     closeModal();
 
     const overlay = document.createElement('div');
@@ -143,26 +138,29 @@ export function showModal(contentHtml) {
     const modal = document.createElement('div');
     modal.className = 'modal';
 
+    const header = document.createElement('div');
+    header.className = 'modal-header';
+    header.innerHTML = `<h3 class="modal-title">${title}</h3>`;
+
     const closeBtn = document.createElement('button');
     closeBtn.className = 'modal-close';
     closeBtn.innerHTML = '&times;';
     closeBtn.setAttribute('aria-label', 'Close modal');
     closeBtn.addEventListener('click', closeModal);
+    header.appendChild(closeBtn);
 
     const body = document.createElement('div');
     body.className = 'modal-body';
-    body.innerHTML = contentHtml;
+    body.innerHTML = bodyHtml;
 
-    modal.appendChild(closeBtn);
+    modal.appendChild(header);
     modal.appendChild(body);
     overlay.appendChild(modal);
 
-    // Close when clicking the overlay background
     overlay.addEventListener('click', (e) => {
         if (e.target === overlay) closeModal();
     });
 
-    // Close on Escape key
     const escHandler = (e) => {
         if (e.key === 'Escape') {
             closeModal();
@@ -174,9 +172,6 @@ export function showModal(contentHtml) {
     container.appendChild(overlay);
 }
 
-/**
- * Close and remove the current modal.
- */
 export function closeModal() {
     const container = document.getElementById('modalContainer');
     if (!container) return;
@@ -187,9 +182,6 @@ export function closeModal() {
 // Task Badge
 // ---------------------------------------------------------------------------
 
-/**
- * Update the sidebar task badge with the count of overdue + due-today tasks.
- */
 export function updateTaskBadge() {
     const badge = document.getElementById('taskBadge');
     if (!badge) return;
@@ -214,6 +206,40 @@ export function updateTaskBadge() {
     } else {
         badge.style.display = 'none';
     }
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline Progress Bar (sidebar)
+// ---------------------------------------------------------------------------
+
+function updatePipelineProgress() {
+    const fill = document.getElementById('pipelineProgressFill');
+    const stats = document.getElementById('pipelineProgressStats');
+    if (!fill || !stats) return;
+
+    const leads = store.getLeads().filter(l => l.savedAt);
+    const contacts = store.getContacts();
+    const deals = store.getDeals();
+    const wonDeals = deals.filter(d => d.stage === 'Closed Won');
+    const projects = store.getProjects();
+
+    // Calculate stages with data
+    const stages = [
+        { label: 'Leads', count: leads.length },
+        { label: 'Contacts', count: contacts.length },
+        { label: 'Deals', count: deals.filter(d => d.stage !== 'Closed Won' && d.stage !== 'Closed Lost').length },
+        { label: 'Won', count: wonDeals.length },
+        { label: 'Projects', count: projects.filter(p => p.status !== 'Complete').length },
+    ];
+
+    const totalItems = stages.reduce((s, st) => s + st.count, 0);
+    const activeStages = stages.filter(s => s.count > 0).length;
+    const pct = totalItems > 0 ? Math.min(100, (activeStages / stages.length) * 100) : 0;
+
+    fill.style.width = pct + '%';
+    stats.innerHTML = stages.map(s =>
+        `<span class="progress-stat${s.count > 0 ? ' active' : ''}">${s.count} ${s.label}</span>`
+    ).join('');
 }
 
 // ---------------------------------------------------------------------------
@@ -257,7 +283,6 @@ function setupGlobalSearch() {
         }, 300);
     });
 
-    // Close on Escape
     input.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             dropdown.style.display = 'none';
@@ -265,7 +290,6 @@ function setupGlobalSearch() {
         }
     });
 
-    // Close on click outside
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.sidebar-search')) {
             dropdown.style.display = 'none';
@@ -277,7 +301,6 @@ function performGlobalSearch(query) {
     const results = [];
     const max = 10;
 
-    // Search leads
     const leads = store.getLeads() || [];
     for (const lead of leads) {
         if (results.length >= max) break;
@@ -287,7 +310,6 @@ function performGlobalSearch(query) {
         }
     }
 
-    // Search contacts
     const contacts = store.getContacts() || [];
     for (const c of contacts) {
         if (results.length >= max) break;
@@ -297,7 +319,6 @@ function performGlobalSearch(query) {
         }
     }
 
-    // Search deals
     const deals = store.getDeals() || [];
     for (const d of deals) {
         if (results.length >= max) break;
@@ -306,12 +327,19 @@ function performGlobalSearch(query) {
         }
     }
 
-    // Search tasks
     const tasks = store.getTasks() || [];
     for (const t of tasks) {
         if (results.length >= max) break;
         if (t.title && t.title.toLowerCase().includes(query)) {
             results.push({ type: 'task', name: t.title, section: 'tasks' });
+        }
+    }
+
+    const projects = store.getProjects() || [];
+    for (const p of projects) {
+        if (results.length >= max) break;
+        if (p.name && p.name.toLowerCase().includes(query)) {
+            results.push({ type: 'project', name: p.name, section: 'projects' });
         }
     }
 
@@ -330,9 +358,10 @@ function renderGlobalSearchResults(results, dropdown) {
         contact: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>',
         deal: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="6" x2="12" y2="18"/></svg>',
         task: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12l2 2 4-4"/></svg>',
+        project: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
     };
 
-    const typeLabel = { lead: 'Lead', contact: 'Contact', deal: 'Deal', task: 'Task' };
+    const typeLabel = { lead: 'Lead', contact: 'Contact', deal: 'Deal', task: 'Task', project: 'Project' };
 
     dropdown.innerHTML = results.map(r => `
         <div class="search-result-item" data-section="${r.section}">
@@ -342,7 +371,6 @@ function renderGlobalSearchResults(results, dropdown) {
         </div>
     `).join('');
 
-    // Click handler for results
     dropdown.querySelectorAll('.search-result-item').forEach(item => {
         item.addEventListener('click', () => {
             const section = item.dataset.section;
@@ -370,13 +398,9 @@ function setupThemeToggle() {
     const btn = document.getElementById('theme-toggle-btn');
     if (!btn) return;
 
-    // Set initial icon
     const settings = store.getSettings();
     const isLight = settings.theme === 'light';
-    btn.innerHTML = isLight
-        ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg>'
-        : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
-    btn.title = isLight ? 'Switch to Dark Mode' : 'Switch to Light Mode';
+    updateThemeIcon(btn, isLight);
 
     btn.addEventListener('click', (e) => {
         e.preventDefault();
@@ -390,14 +414,188 @@ function setupThemeToggle() {
             document.documentElement.removeAttribute('data-theme');
         }
 
-        // Update icon
-        const nowLight = newTheme === 'light';
-        btn.innerHTML = nowLight
-            ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg>'
-            : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
-        btn.title = nowLight ? 'Switch to Dark Mode' : 'Switch to Light Mode';
+        updateThemeIcon(btn, newTheme === 'light');
+        showToast(newTheme === 'light' ? 'Light theme applied.' : 'Dark theme applied.');
+    });
+}
 
-        showToast(nowLight ? 'Light theme applied.' : 'Dark theme applied.');
+function updateThemeIcon(btn, isLight) {
+    btn.innerHTML = isLight
+        ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg><span>Theme</span>'
+        : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg><span>Theme</span>';
+    btn.title = isLight ? 'Switch to Dark Mode' : 'Switch to Light Mode';
+}
+
+// ---------------------------------------------------------------------------
+// Help Tooltips
+// ---------------------------------------------------------------------------
+
+function setupHelpTooltips() {
+    const tooltip = document.getElementById('helpTooltip');
+    if (!tooltip) return;
+
+    document.addEventListener('mouseenter', (e) => {
+        const tip = e.target.closest('.nav-help-tip');
+        if (!tip) return;
+        const text = tip.dataset.tooltip;
+        if (!text) return;
+
+        const rect = tip.getBoundingClientRect();
+        tooltip.textContent = text;
+        tooltip.style.display = 'block';
+        tooltip.style.top = (rect.top + rect.height / 2 - tooltip.offsetHeight / 2) + 'px';
+        tooltip.style.left = (rect.right + 10) + 'px';
+    }, true);
+
+    document.addEventListener('mouseleave', (e) => {
+        if (e.target.closest('.nav-help-tip')) {
+            tooltip.style.display = 'none';
+        }
+    }, true);
+}
+
+// ---------------------------------------------------------------------------
+// First-Time Setup Wizard
+// ---------------------------------------------------------------------------
+
+function checkSetupWizard() {
+    const settings = store.getSettings();
+    if (settings.setupComplete) return;
+
+    // If they already have data, mark setup as done
+    if (store.getLeads().length > 0 || settings.apiKey) {
+        store.updateSettings({ setupComplete: true });
+        return;
+    }
+
+    showSetupWizard();
+}
+
+function showSetupWizard() {
+    const overlay = document.getElementById('setupWizard');
+    if (!overlay) return;
+    overlay.style.display = 'flex';
+    renderWizardStep(1);
+}
+
+function renderWizardStep(step) {
+    const body = document.getElementById('wizardBody');
+    if (!body) return;
+
+    // Update step indicators
+    document.querySelectorAll('.wizard-step').forEach(el => {
+        const s = parseInt(el.dataset.step);
+        el.classList.toggle('active', s === step);
+        el.classList.toggle('completed', s < step);
+    });
+
+    if (step === 1) {
+        body.innerHTML = `
+            <div class="wizard-content">
+                <h3>Tell us about you</h3>
+                <p>This helps personalize your dashboard.</p>
+                <div class="form-group">
+                    <label>Your Name</label>
+                    <input type="text" id="wizard-name" class="form-control" placeholder="e.g. John Smith">
+                </div>
+                <div class="form-group">
+                    <label>Business Name</label>
+                    <input type="text" id="wizard-business" class="form-control" placeholder="e.g. Smith Digital Marketing">
+                </div>
+                <div class="wizard-actions">
+                    <button class="btn btn-outline" id="wizard-skip">Skip Setup</button>
+                    <button class="btn btn-primary" id="wizard-next-1">Next</button>
+                </div>
+            </div>`;
+    } else if (step === 2) {
+        body.innerHTML = `
+            <div class="wizard-content">
+                <h3>Add Your Google API Key</h3>
+                <p>This lets you search for businesses in any city. Google gives you <strong>$200/month free</strong> (about 10,000 searches).</p>
+                <div class="form-group">
+                    <label>Google Places API Key</label>
+                    <input type="text" id="wizard-apikey" class="form-control" placeholder="Paste your API key here">
+                </div>
+                <div class="wizard-help">
+                    <p><strong>How to get one (free):</strong></p>
+                    <ol>
+                        <li>Go to <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a></li>
+                        <li>Create a project and enable Places API</li>
+                        <li>Go to Credentials, create an API key</li>
+                        <li>Paste it above</li>
+                    </ol>
+                </div>
+                <div class="wizard-actions">
+                    <button class="btn btn-outline" id="wizard-back-2">Back</button>
+                    <button class="btn btn-outline" id="wizard-skip-2">Skip for now</button>
+                    <button class="btn btn-primary" id="wizard-next-2">Next</button>
+                </div>
+            </div>`;
+    } else if (step === 3) {
+        body.innerHTML = `
+            <div class="wizard-content">
+                <h3>You're All Set!</h3>
+                <p>Here's how your business workflow works:</p>
+                <div class="wizard-flow">
+                    <div class="wizard-flow-step"><span class="stage-number">1</span><strong>Find Leads</strong><br>Search for businesses in your target market</div>
+                    <div class="wizard-flow-arrow">&#8594;</div>
+                    <div class="wizard-flow-step"><span class="stage-number">2</span><strong>Reach Out</strong><br>Convert leads to contacts and make contact</div>
+                    <div class="wizard-flow-arrow">&#8594;</div>
+                    <div class="wizard-flow-step"><span class="stage-number">3</span><strong>Close Deals</strong><br>Track proposals and close sales</div>
+                    <div class="wizard-flow-arrow">&#8594;</div>
+                    <div class="wizard-flow-step"><span class="stage-number">4</span><strong>Deliver Work</strong><br>Manage projects and deliverables</div>
+                    <div class="wizard-flow-arrow">&#8594;</div>
+                    <div class="wizard-flow-step"><span class="stage-number">5</span><strong>Follow Up</strong><br>Tasks, reminders, and repeat business</div>
+                </div>
+                <div class="wizard-actions" style="justify-content:center;">
+                    <button class="btn btn-primary btn-lg" id="wizard-finish">Start Finding Leads</button>
+                </div>
+            </div>`;
+    }
+}
+
+function setupWizardHandlers() {
+    document.addEventListener('click', (e) => {
+        const target = e.target;
+
+        if (target.id === 'wizard-next-1') {
+            const name = document.getElementById('wizard-name')?.value.trim();
+            const business = document.getElementById('wizard-business')?.value.trim();
+            if (name || business) {
+                store.updateSettings({ userName: name, businessName: business });
+            }
+            renderWizardStep(2);
+            return;
+        }
+
+        if (target.id === 'wizard-next-2') {
+            const key = document.getElementById('wizard-apikey')?.value.trim();
+            if (key) {
+                store.updateSettings({ apiKey: key });
+            }
+            renderWizardStep(3);
+            return;
+        }
+
+        if (target.id === 'wizard-back-2') {
+            renderWizardStep(1);
+            return;
+        }
+
+        if (target.id === 'wizard-skip' || target.id === 'wizard-skip-2') {
+            store.updateSettings({ setupComplete: true });
+            document.getElementById('setupWizard').style.display = 'none';
+            navigate(location.hash || '#dashboard');
+            return;
+        }
+
+        if (target.id === 'wizard-finish') {
+            store.updateSettings({ setupComplete: true });
+            document.getElementById('setupWizard').style.display = 'none';
+            location.hash = '#leads';
+            navigate('#leads');
+            return;
+        }
     });
 }
 
@@ -406,7 +604,6 @@ function setupThemeToggle() {
 // ---------------------------------------------------------------------------
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // Initialize the data store
     store.init();
 
     // Apply saved theme
@@ -415,19 +612,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.documentElement.setAttribute('data-theme', 'light');
     }
 
+    // Expose CRM utilities globally for modules
+    window.CRM = {
+        showToast,
+        showModal,
+        closeModal,
+        navigate: (section, entityId) => {
+            location.hash = `#${section}`;
+            navigate(`#${section}`, entityId);
+        },
+        updateTaskBadge,
+        store,
+    };
+
     // Load and initialize all section modules
     await loadModules();
 
-    // Set up sidebar navigation
     setupSidebar();
-
-    // Set up global search
     setupGlobalSearch();
-
-    // Set up theme toggle button in sidebar
     setupThemeToggle();
+    setupHelpTooltips();
+    setupWizardHandlers();
 
-    // Listen for hash changes
     window.addEventListener('hashchange', () => {
         navigate(location.hash);
     });
@@ -436,9 +642,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         navigate(location.hash);
     });
 
+    // Check if first-time user
+    checkSetupWizard();
+
     // Navigate to the initial route
     navigate(location.hash || '#dashboard');
 
-    // Update the task badge on startup
     updateTaskBadge();
 });

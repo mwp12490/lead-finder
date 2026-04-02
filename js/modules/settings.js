@@ -31,6 +31,8 @@ function getDataStats() {
         deals: store.getDeals().length,
         tasks: store.getTasks().length,
         activities: store.getActivities().length,
+        projects: store.getProjects().length,
+        payments: store.getPayments().length,
     };
 }
 
@@ -102,6 +104,24 @@ export function render() {
         </div>
 
         <div class="card settings-card">
+            <h3>Claude AI API Key</h3>
+            <p class="text-muted">Powers the AI Assistant features: outreach writing, sales coaching, meeting prep, and more. Free tier available.</p>
+            <div class="form-group">
+                <input type="text" id="settings-claude-key" class="form-control" value="${escapeHtml(maskApiKey(settings.claudeApiKey || ''))}" placeholder="Enter your Anthropic API key">
+            </div>
+            <button class="btn btn-primary" id="btn-update-claude-key">Update Key</button>
+            <div class="settings-instructions">
+                <p><strong>How to get an API key:</strong></p>
+                <ol>
+                    <li>Go to <a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a></li>
+                    <li>Create a free account</li>
+                    <li>Go to <strong>API Keys</strong> and create a new key</li>
+                    <li>Copy the key and paste it above</li>
+                </ol>
+            </div>
+        </div>
+
+        <div class="card settings-card">
             <h3>Business Profile</h3>
             <div class="form-group">
                 <label for="settings-user-name">Your Name</label>
@@ -126,6 +146,10 @@ export function render() {
                 <span class="data-stat">${stats.tasks} tasks</span>
                 <span class="data-stat-sep">&middot;</span>
                 <span class="data-stat">${stats.activities} activities</span>
+                <span class="data-stat-sep">&middot;</span>
+                <span class="data-stat">${stats.projects} projects</span>
+                <span class="data-stat-sep">&middot;</span>
+                <span class="data-stat">${stats.payments} payments</span>
             </div>
             <div class="settings-actions">
                 <button class="btn btn-outline" id="btn-export-data">Export All Data</button>
@@ -255,6 +279,25 @@ function handleUpdateYelpKey() {
     render();
 }
 
+// ---- Claude Key Update ----
+
+function handleUpdateClaudeKey() {
+    const input = document.getElementById('settings-claude-key');
+    if (!input) return;
+    const rawValue = input.value.trim();
+    if (/^[\u2022]+/.test(rawValue) && rawValue.length > 4) {
+        const currentKey = store.getSettings().claudeApiKey || '';
+        if (rawValue.slice(-4) === currentKey.slice(-4)) {
+            window.CRM.showToast('Claude API key unchanged.', 'info');
+            return;
+        }
+    }
+    if (!rawValue) { window.CRM.showToast('Please enter an API key.', 'error'); return; }
+    store.updateSettings({ claudeApiKey: rawValue });
+    window.CRM.showToast('Claude API key updated.');
+    render();
+}
+
 // ---- Profile Save ----
 
 function handleSaveProfile() {
@@ -282,6 +325,8 @@ function handleExportData() {
         deals: store.getDeals(),
         activities: store.getActivities(),
         tasks: store.getTasks(),
+        projects: store.getProjects(),
+        payments: store.getPayments(),
         settings: store.getSettings(),
     };
 
@@ -329,6 +374,12 @@ function handleImportData(file) {
             if (Array.isArray(data.tasks)) {
                 data.tasks.forEach(task => store.addTask(task));
             }
+            if (Array.isArray(data.projects)) {
+                data.projects.forEach(project => store.addProject(project));
+            }
+            if (Array.isArray(data.payments)) {
+                data.payments.forEach(payment => store.addPayment(payment));
+            }
             if (data.settings && typeof data.settings === 'object') {
                 store.updateSettings(data.settings);
             }
@@ -347,7 +398,7 @@ function handleImportData(file) {
 function handleClearData() {
     const confirmed = confirm(
         'Are you sure you want to clear ALL CRM data?\n\n' +
-        'This will permanently delete all leads, contacts, deals, tasks, and activities.\n\n' +
+        'This will permanently delete all leads, contacts, deals, tasks, activities, projects, and payments.\n\n' +
         'This action cannot be undone. Consider exporting your data first.'
     );
 
@@ -362,6 +413,8 @@ function handleClearData() {
     localStorage.removeItem('crm_settings');
     localStorage.removeItem('crm_tags');
     localStorage.removeItem('crm_notes');
+    localStorage.removeItem('crm_projects');
+    localStorage.removeItem('crm_payments');
 
     // Re-initialize the store
     store.init();
@@ -391,6 +444,11 @@ export function init() {
 
         if (target.id === 'btn-update-yelp-key' || target.closest('#btn-update-yelp-key')) {
             handleUpdateYelpKey();
+            return;
+        }
+
+        if (target.id === 'btn-update-claude-key' || target.closest('#btn-update-claude-key')) {
+            handleUpdateClaudeKey();
             return;
         }
 

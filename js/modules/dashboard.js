@@ -275,6 +275,188 @@ function renderCharts() {
     }
 }
 
+// ---- Business Flow Progress Bar ----
+
+function renderBusinessFlowBar() {
+    const leads = store.getLeads().filter(l => l.savedAt);
+    const deals = store.getDeals();
+    const projects = store.getProjects ? store.getProjects() : [];
+    const payments = store.getPayments ? store.getPayments() : [];
+
+    const findingCount = leads.filter(l => !l.status || l.status === 'New').length;
+    const reachingOutCount = leads.filter(l => l.status === 'Contacted' || l.status === 'Responded' || l.status === 'Meeting Set').length;
+    const closingCount = deals.filter(d => d.stage !== 'Closed Won' && d.stage !== 'Closed Lost').length;
+    const deliveringCount = projects.filter(p => p.status !== 'Completed' && p.status !== 'Cancelled').length;
+    const gettingPaidCount = payments.filter(p => p.status === 'Pending' || p.status === 'Overdue' || p.status === 'Sent').length;
+
+    const stages = [
+        { label: 'Finding', count: findingCount, color: '#3b82f6' },
+        { label: 'Reaching Out', count: reachingOutCount, color: '#8b5cf6' },
+        { label: 'Closing Deals', count: closingCount, color: '#f59e0b' },
+        { label: 'Delivering', count: deliveringCount, color: '#22c55e' },
+        { label: 'Getting Paid', count: gettingPaidCount, color: '#ef4444' },
+    ];
+
+    const stageBoxes = stages.map((s, i) => {
+        const active = s.count > 0;
+        const bg = active ? s.color : 'rgba(255,255,255,0.06)';
+        const textColor = active ? '#fff' : '#6b7280';
+        const arrow = i < stages.length - 1
+            ? `<span style="color:#6b7280;font-size:1.2rem;margin:0 2px;flex-shrink:0;">&#8594;</span>`
+            : '';
+        return `
+            <div style="display:flex;align-items:center;gap:0;flex:1;min-width:0;">
+                <div style="flex:1;min-width:0;background:${bg};border:1px solid ${active ? s.color : 'rgba(255,255,255,0.1)'};border-radius:8px;padding:10px 8px;text-align:center;transition:all 0.2s;">
+                    <div style="font-size:1.3rem;font-weight:700;color:${textColor};">${s.count}</div>
+                    <div style="font-size:0.7rem;color:${active ? 'rgba(255,255,255,0.85)' : '#6b7280'};margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.label}</div>
+                </div>
+                ${arrow}
+            </div>`;
+    }).join('');
+
+    return `
+        <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:16px;margin-bottom:20px;">
+            <div style="font-size:0.8rem;color:#9ca3af;margin-bottom:10px;font-weight:500;text-transform:uppercase;letter-spacing:0.5px;">Business Flow</div>
+            <div style="display:flex;align-items:center;gap:0;">
+                ${stageBoxes}
+            </div>
+        </div>
+    `;
+}
+
+// ---- What To Do Next Widget ----
+
+function renderWhatsNextWidget() {
+    const now = new Date();
+    const items = [];
+
+    // Uncontacted leads
+    const leads = store.getLeads().filter(l => l.savedAt);
+    const uncontacted = leads.filter(l => !l.status || l.status === 'New');
+    if (uncontacted.length > 0) {
+        items.push({
+            icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/></svg>',
+            message: `You have <strong>${uncontacted.length}</strong> lead${uncontacted.length !== 1 ? 's' : ''} you haven't contacted yet`,
+            action: 'Reach out now',
+            target: 'leads',
+            color: '#3b82f6',
+        });
+    }
+
+    // Stale contacted leads (status Contacted, last activity > 3 days)
+    const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+    const contactedLeads = leads.filter(l => l.status === 'Contacted');
+    const staleContacted = contactedLeads.filter(l => {
+        const activities = store.getActivitiesFor ? store.getActivitiesFor('lead', l.id) : [];
+        if (activities.length > 0) {
+            const latest = activities.reduce((a, b) => new Date(a.date) > new Date(b.date) ? a : b);
+            return (now.getTime() - new Date(latest.date).getTime()) > threeDaysMs;
+        }
+        // No activities recorded, check savedAt as fallback
+        return l.savedAt && (now.getTime() - new Date(l.savedAt).getTime()) > threeDaysMs;
+    });
+    if (staleContacted.length > 0) {
+        items.push({
+            icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+            message: `<strong>${staleContacted.length}</strong> lead${staleContacted.length !== 1 ? 's' : ''} waiting for follow-up`,
+            action: 'Follow up',
+            target: 'leads',
+            color: '#f59e0b',
+        });
+    }
+
+    // Proposals waiting > 7 days
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    const proposalDeals = store.getDeals().filter(d => {
+        if (d.stage !== 'Proposal') return false;
+        const created = d.updatedAt || d.createdAt;
+        if (!created) return false;
+        return (now.getTime() - new Date(created).getTime()) > sevenDaysMs;
+    });
+    if (proposalDeals.length > 0) {
+        items.push({
+            icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+            message: `<strong>${proposalDeals.length}</strong> proposal${proposalDeals.length !== 1 ? 's' : ''} waiting for response`,
+            action: 'Check in',
+            target: 'deals',
+            color: '#8b5cf6',
+        });
+    }
+
+    // Overdue tasks
+    const tasks = store.getTasks ? store.getTasks() : [];
+    const overdueTasks = tasks.filter(t => {
+        if (t.completed || t.status === 'Done') return false;
+        if (!t.dueDate) return false;
+        return new Date(t.dueDate).getTime() < now.getTime();
+    });
+    if (overdueTasks.length > 0) {
+        items.push({
+            icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12l2 2 4-4"/></svg>',
+            message: `<strong>${overdueTasks.length}</strong> task${overdueTasks.length !== 1 ? 's are' : ' is'} overdue`,
+            action: 'Handle them now',
+            target: 'tasks',
+            color: '#ef4444',
+        });
+    }
+
+    // Overdue project milestones
+    const projects = store.getProjects ? store.getProjects() : [];
+    const overdueMilestones = [];
+    projects.forEach(p => {
+        if (p.status === 'Completed' || p.status === 'Cancelled') return;
+        const milestones = p.milestones || [];
+        milestones.forEach(m => {
+            if (m.completed) return;
+            if (m.dueDate && new Date(m.dueDate).getTime() < now.getTime()) {
+                overdueMilestones.push(m);
+            }
+        });
+    });
+    if (overdueMilestones.length > 0) {
+        items.push({
+            icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>',
+            message: `<strong>${overdueMilestones.length}</strong> project milestone${overdueMilestones.length !== 1 ? 's are' : ' is'} overdue`,
+            action: 'View projects',
+            target: 'projects',
+            color: '#f97316',
+        });
+    }
+
+    // Build HTML
+    let contentHTML;
+    if (items.length === 0) {
+        contentHTML = `
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 0;">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                <div>
+                    <div style="font-size:1rem;font-weight:600;color:#e0e0e0;">You're all caught up!</div>
+                    <div style="font-size:0.85rem;color:#9ca3af;margin-top:2px;">Consider <a href="#leads" style="color:#3b82f6;text-decoration:underline;">finding new leads</a> to grow your pipeline.</div>
+                </div>
+            </div>`;
+    } else {
+        contentHTML = items.map(item => `
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06);">
+                <div style="flex-shrink:0;width:36px;height:36px;border-radius:8px;background:${item.color}15;display:flex;align-items:center;justify-content:center;">${item.icon}</div>
+                <div style="flex:1;font-size:0.9rem;color:#d1d5db;">${item.message}</div>
+                <a href="#${item.target}" data-action="nav" data-target="${item.target}" style="flex-shrink:0;padding:6px 14px;background:${item.color};color:#fff;border-radius:6px;font-size:0.8rem;font-weight:500;text-decoration:none;cursor:pointer;white-space:nowrap;">${item.action}</a>
+            </div>
+        `).join('');
+    }
+
+    return `
+        <div style="background:rgba(255,255,255,0.03);border:2px solid transparent;border-image:linear-gradient(135deg, #3b82f6, #8b5cf6, #f59e0b) 1;border-radius:0;padding:0;margin-bottom:20px;">
+            <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:18px 20px;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                    <h3 style="margin:0;font-size:1rem;font-weight:600;color:#e0e0e0;">What To Do Next</h3>
+                </div>
+                ${contentHTML}
+            </div>
+        </div>
+    `;
+}
+
 // ---- Quick Actions ----
 
 function renderQuickActions() {
@@ -322,6 +504,10 @@ export function render() {
                 Customize
             </button>
         </div>
+
+        ${renderBusinessFlowBar()}
+
+        ${renderWhatsNextWidget()}
 
         ${renderKPICards()}
 

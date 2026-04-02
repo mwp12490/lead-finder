@@ -1,7 +1,7 @@
-// activities.js - Activity utility module for the CRM application
+// activities.js - Enhanced Activity utility module with discussed/next steps/follow-up
 
 import { store } from './store.js';
-import { escapeHtml, timeAgo } from './utils.js';
+import { escapeHtml, timeAgo, formatDate } from './utils.js';
 
 function activityIcon(type) {
   switch (type) {
@@ -31,6 +31,10 @@ function resolveEntityName(activity) {
     const deal = store.getDealById(activity.dealId);
     return deal ? deal.name : '';
   }
+  if (activity.projectId) {
+    const project = store.getProjectById(activity.projectId);
+    return project ? project.name : '';
+  }
   return '';
 }
 
@@ -48,16 +52,30 @@ export function renderTimeline(containerId, entityType, entityId) {
 
   container.innerHTML = `
     <div class="activity-timeline">
-      ${activities.map(a => `
-        <div class="activity-item">
-          ${activityIcon(a.type)}
-          <div class="activity-content">
-            <div class="activity-summary">${escapeHtml(a.summary)}</div>
-            <div class="activity-meta">${timeAgo(a.timestamp)} &middot; ${escapeHtml(a.type)}${a.duration ? ' &middot; ' + a.duration + ' min' : ''}</div>
-            ${a.details ? `<div class="activity-details">${escapeHtml(a.details)}</div>` : ''}
+      ${activities.map(a => {
+        let extras = '';
+        if (a.discussed) {
+          extras += `<div style="margin-top:4px;font-size:0.8rem;color:#a0a0b0;"><strong style="color:#e0e0e0;">Discussed:</strong> ${escapeHtml(a.discussed)}</div>`;
+        }
+        if (a.nextSteps) {
+          extras += `<div style="margin-top:2px;font-size:0.8rem;color:#a0a0b0;"><strong style="color:#0ea5e9;">Next Steps:</strong> ${escapeHtml(a.nextSteps)}</div>`;
+        }
+        if (a.followUpDate) {
+          const isOverdue = a.followUpDate < new Date().toISOString().slice(0, 10);
+          extras += `<div style="margin-top:2px;"><span style="display:inline-block;padding:1px 8px;border-radius:4px;font-size:0.72rem;font-weight:600;background:${isOverdue ? 'rgba(239,68,68,0.15)' : 'rgba(14,165,233,0.15)'};color:${isOverdue ? '#ef4444' : '#0ea5e9'};">Follow-up: ${formatDate(a.followUpDate)}${isOverdue ? ' (overdue)' : ''}</span></div>`;
+        }
+        return `
+          <div class="activity-item">
+            ${activityIcon(a.type)}
+            <div class="activity-content">
+              <div class="activity-summary">${escapeHtml(a.summary)}</div>
+              <div class="activity-meta">${timeAgo(a.timestamp)} &middot; ${escapeHtml(a.type)}${a.duration ? ' &middot; ' + a.duration + ' min' : ''}</div>
+              ${a.details ? `<div class="activity-details">${escapeHtml(a.details)}</div>` : ''}
+              ${extras}
+            </div>
           </div>
-        </div>
-      `).join('')}
+        `;
+      }).join('')}
     </div>
   `;
 }
@@ -79,11 +97,19 @@ export function renderActivityFeed(containerId, limit) {
     <div class="activity-feed">
       ${activities.map(a => {
         const entityName = resolveEntityName(a);
+        let condensedExtras = '';
+        if (a.nextSteps) {
+          condensedExtras = ` <span style="color:#0ea5e9;font-size:0.75rem;">&rarr; ${escapeHtml(a.nextSteps.substring(0, 60))}${a.nextSteps.length > 60 ? '...' : ''}</span>`;
+        }
+        if (a.followUpDate) {
+          const isOverdue = a.followUpDate < new Date().toISOString().slice(0, 10);
+          condensedExtras += ` <span style="padding:1px 6px;border-radius:3px;font-size:0.65rem;font-weight:600;background:${isOverdue ? 'rgba(239,68,68,0.15)' : 'rgba(14,165,233,0.1)'};color:${isOverdue ? '#ef4444' : '#0ea5e9'};">F/U: ${a.followUpDate}</span>`;
+        }
         return `
           <div class="activity-item">
             ${activityIcon(a.type)}
             <div class="activity-content">
-              <div class="activity-summary">${escapeHtml(a.summary)}</div>
+              <div class="activity-summary">${escapeHtml(a.summary)}${condensedExtras}</div>
               <div class="activity-meta">
                 ${entityName ? escapeHtml(entityName) + ' &middot; ' : ''}${timeAgo(a.timestamp)}
               </div>
@@ -109,18 +135,87 @@ export function showLogActivityForm(entityType, entityId, defaultType) {
       </div>
       <textarea placeholder="Details (optional)..." class="activity-details-input" data-field="details"></textarea>
       <div class="form-row">
-        <input type="number" placeholder="Duration (min)" class="activity-duration-input" data-field="duration">
+        <input type="number" placeholder="Duration (min)" class="activity-duration-input" data-field="duration" min="0">
+      </div>
+
+      <div style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid rgba(255,255,255,0.06);">
+        <div style="font-size:0.78rem;font-weight:600;color:#a0a0b0;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.5rem;">Enhanced Tracking</div>
+        <textarea placeholder="What was discussed?" class="activity-discussed-input" data-field="discussed" rows="2" style="width:100%;margin-bottom:0.5rem;padding:0.5rem;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:6px;color:#e0e0e0;font-family:inherit;font-size:0.85rem;resize:vertical;"></textarea>
+        <textarea placeholder="Next steps..." class="activity-nextsteps-input" data-field="nextSteps" rows="2" style="width:100%;margin-bottom:0.5rem;padding:0.5rem;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:6px;color:#e0e0e0;font-family:inherit;font-size:0.85rem;resize:vertical;"></textarea>
+        <div style="display:flex;align-items:center;gap:0.5rem;">
+          <label style="font-size:0.82rem;color:#a0a0b0;white-space:nowrap;">Follow-up date:</label>
+          <input type="date" class="activity-followup-input" data-field="followUpDate" style="flex:1;padding:0.4rem;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:6px;color:#e0e0e0;font-family:inherit;font-size:0.85rem;">
+          <span style="font-size:0.7rem;color:#a0a0b0;">Auto-creates a task</span>
+        </div>
+      </div>
+
+      <div class="form-row" style="margin-top:0.75rem;">
         <button class="btn btn-primary btn-sm save-activity-btn" data-action="save-activity" data-entity-type="${entityType}" data-entity-id="${entityId}">Log Activity</button>
       </div>
     </div>
   `;
 }
 
+/**
+ * Collect activity form data and save to store.
+ * Called by parent modules that embed the activity form.
+ */
+export function saveActivityFromForm(formContainer, entityType, entityId) {
+  if (!formContainer) return null;
+
+  const type = formContainer.querySelector('[data-field="type"]')?.value || 'other';
+  const summary = formContainer.querySelector('[data-field="summary"]')?.value?.trim();
+  const details = formContainer.querySelector('[data-field="details"]')?.value?.trim() || '';
+  const duration = formContainer.querySelector('[data-field="duration"]')?.value || null;
+  const discussed = formContainer.querySelector('[data-field="discussed"]')?.value?.trim() || '';
+  const nextSteps = formContainer.querySelector('[data-field="nextSteps"]')?.value?.trim() || '';
+  const followUpDate = formContainer.querySelector('[data-field="followUpDate"]')?.value || null;
+
+  if (!summary) {
+    window.CRM.showToast('Please enter a summary.', 'error');
+    return null;
+  }
+
+  const activityData = {
+    type,
+    summary,
+    details,
+    duration: duration ? parseInt(duration) : null,
+    discussed,
+    nextSteps,
+    followUpDate,
+  };
+
+  // Set the entity link
+  if (entityType === 'contact') activityData.contactId = entityId;
+  else if (entityType === 'lead') activityData.leadId = entityId;
+  else if (entityType === 'deal') activityData.dealId = entityId;
+  else if (entityType === 'project') activityData.projectId = entityId;
+
+  const activity = store.addActivity(activityData);
+
+  // Auto-create follow-up task if date is set
+  if (followUpDate) {
+    store.addTask({
+      title: `Follow up: ${summary}`,
+      dueDate: followUpDate,
+      description: nextSteps || `Follow up on: ${summary}`,
+      [entityType + 'Id']: entityId,
+      priority: 'medium',
+      isAutoGenerated: true,
+    });
+    if (typeof window.CRM.updateTaskBadge === 'function') {
+      window.CRM.updateTaskBadge();
+    }
+  }
+
+  return activity;
+}
+
 export function init() {
-  // No-op: activities module has no standalone section or event listeners.
-  // Activity form save handling is managed by the parent module that embeds the form.
+  // Activities module has no standalone section.
 }
 
 export function render() {
-  // No-op: activities do not have their own section.
+  // Activities do not have their own section.
 }
