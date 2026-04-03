@@ -1062,6 +1062,317 @@ function exportCSV() {
     URL.revokeObjectURL(url);
 }
 
+// ── CSV Import ──
+
+const CSV_COLUMN_MAP = {
+    // Lead Extractor extension format
+    'name': 'name',
+    'business name': 'name',
+    'company': 'name',
+    'company name': 'name',
+    'website': 'website',
+    'web': 'website',
+    'url': 'website',
+    'site': 'website',
+    'phone': 'phone',
+    'phone number': 'phone',
+    'telephone': 'phone',
+    'tel': 'phone',
+    'email': 'email',
+    'email address': 'email',
+    'e-mail': 'email',
+    'profile': 'profile',
+    'google maps url': 'profile',
+    'maps url': 'profile',
+    'place url': 'profile',
+    'link': 'profile',
+    // Common scraper formats
+    'address': 'address',
+    'full address': 'address',
+    'street address': 'address',
+    'location': 'address',
+    'city': 'city',
+    'state': 'state',
+    'zip': 'zip',
+    'zipcode': 'zip',
+    'zip code': 'zip',
+    'rating': 'rating',
+    'stars': 'rating',
+    'avg rating': 'rating',
+    'reviews': 'reviewCount',
+    'review count': 'reviewCount',
+    'total reviews': 'reviewCount',
+    'num reviews': 'reviewCount',
+    'number of reviews': 'reviewCount',
+    'category': 'category',
+    'type': 'category',
+    'business type': 'category',
+    'niche': 'category',
+    'hours': 'hours',
+    'business hours': 'hours',
+    'opening hours': 'hours',
+};
+
+function parseCSVText(text) {
+    const lines = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (ch === '"') {
+            if (inQuotes && text[i + 1] === '"') {
+                current += '"';
+                i++;
+            } else {
+                inQuotes = !inQuotes;
+            }
+        } else if (ch === ',' && !inQuotes) {
+            lines.push(current);
+            current = '';
+        } else if ((ch === '\n' || ch === '\r') && !inQuotes) {
+            if (ch === '\r' && text[i + 1] === '\n') i++;
+            lines.push(current);
+            current = '';
+            // Mark row boundary
+            lines.push('\n');
+        } else {
+            current += ch;
+        }
+    }
+    if (current) lines.push(current);
+
+    // Split into rows
+    const rows = [];
+    let row = [];
+    for (const cell of lines) {
+        if (cell === '\n') {
+            if (row.length > 0) rows.push(row);
+            row = [];
+        } else {
+            row.push(cell.trim());
+        }
+    }
+    if (row.length > 0) rows.push(row);
+
+    return rows;
+}
+
+function showImportCSVModal() {
+    const html = `
+        <div style="max-width:700px;">
+            <div id="lf-csvDropZone" style="border:2px dashed var(--border-light);border-radius:8px;padding:40px 20px;text-align:center;cursor:pointer;transition:border-color 0.2s,background 0.2s;margin-bottom:1rem;">
+                <svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="margin-bottom:8px;color:var(--text-secondary);">
+                    <path d="M12 16V4m0 0L8 8m4-4l4 4M4 17v2a1 1 0 001 1h14a1 1 0 001-1v-2"></path>
+                </svg>
+                <p style="font-size:1rem;color:var(--text-primary);margin:0 0 4px;">Drag & drop a CSV file here</p>
+                <p style="font-size:0.8rem;color:var(--text-secondary);margin:0;">or click to browse</p>
+                <input type="file" id="lf-csvFileInput" accept=".csv,.txt" style="display:none;">
+            </div>
+            <div id="lf-csvPreview" style="display:none;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+                    <h4 style="margin:0;color:var(--text-primary);">Preview</h4>
+                    <span id="lf-csvPreviewStats" style="font-size:0.8rem;color:var(--text-secondary);"></span>
+                </div>
+                <div id="lf-csvColumnMap" style="margin-bottom:1rem;"></div>
+                <div style="max-height:250px;overflow-y:auto;border:1px solid var(--border-light);border-radius:6px;">
+                    <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
+                        <thead id="lf-csvPreviewHead" style="position:sticky;top:0;background:var(--bg-card);"></thead>
+                        <tbody id="lf-csvPreviewBody"></tbody>
+                    </table>
+                </div>
+                <div style="display:flex;gap:0.5rem;margin-top:1rem;justify-content:flex-end;">
+                    <button class="btn btn-outline" id="lf-csvCancelBtn">Cancel</button>
+                    <button class="btn btn-primary" id="lf-csvImportBtn">Import <span id="lf-csvImportCount"></span> Leads</button>
+                </div>
+            </div>
+        </div>`;
+
+    window.CRM.showModal('Import CSV', html);
+
+    // Setup handlers after modal renders
+    setTimeout(() => {
+        const dropZone = document.getElementById('lf-csvDropZone');
+        const fileInput = document.getElementById('lf-csvFileInput');
+        if (!dropZone || !fileInput) return;
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = 'var(--accent-primary)';
+            dropZone.style.background = 'rgba(233,69,96,0.05)';
+        });
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.style.borderColor = 'var(--border-light)';
+            dropZone.style.background = '';
+        });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = 'var(--border-light)';
+            dropZone.style.background = '';
+            const file = e.dataTransfer.files[0];
+            if (file) processCSVFile(file);
+        });
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) processCSVFile(file);
+        });
+
+        document.getElementById('lf-csvCancelBtn')?.addEventListener('click', () => window.CRM.closeModal());
+    }, 100);
+}
+
+let pendingCSVLeads = [];
+
+function processCSVFile(file) {
+    if (!file.name.match(/\.(csv|txt)$/i)) {
+        window.CRM.showToast('Please upload a CSV file.', 'error');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const text = e.target.result;
+        const rows = parseCSVText(text);
+
+        if (rows.length < 2) {
+            window.CRM.showToast('CSV appears empty or has no data rows.', 'error');
+            return;
+        }
+
+        const headers = rows[0];
+        const dataRows = rows.slice(1).filter(r => r.some(cell => cell.length > 0));
+
+        // Auto-map columns
+        const columnMapping = {};
+        headers.forEach((header, idx) => {
+            const normalized = header.toLowerCase().trim().replace(/[_-]/g, ' ');
+            if (CSV_COLUMN_MAP[normalized]) {
+                columnMapping[idx] = CSV_COLUMN_MAP[normalized];
+            }
+        });
+
+        // Convert rows to lead objects
+        const existingLeads = store.getLeads();
+        pendingCSVLeads = [];
+        let dupeCount = 0;
+
+        for (const row of dataRows) {
+            const lead = {
+                id: generateId(),
+                name: '',
+                phone: '',
+                website: '',
+                email: '',
+                address: '',
+                city: '',
+                category: '',
+                rating: null,
+                reviewCount: 0,
+                profile: '',
+                source: 'csv-import',
+                status: 'New',
+                enriched: true,
+                savedAt: new Date().toISOString(),
+            };
+
+            for (const [colIdx, field] of Object.entries(columnMapping)) {
+                const val = row[parseInt(colIdx)] || '';
+                if (field === 'rating') {
+                    lead.rating = parseFloat(val) || null;
+                } else if (field === 'reviewCount') {
+                    lead.reviewCount = parseInt(val) || 0;
+                } else {
+                    lead[field] = val;
+                }
+            }
+
+            if (!lead.name || lead.name === 'Unnamed') continue;
+
+            // Dedupe by name + phone
+            const isDupe = existingLeads.some(existing =>
+                existing.name.toLowerCase() === lead.name.toLowerCase() &&
+                (existing.phone === lead.phone || (!existing.phone && !lead.phone))
+            );
+
+            if (isDupe) {
+                dupeCount++;
+                continue;
+            }
+
+            pendingCSVLeads.push(lead);
+        }
+
+        // Show preview
+        const dropZone = document.getElementById('lf-csvDropZone');
+        const preview = document.getElementById('lf-csvPreview');
+        if (dropZone) dropZone.style.display = 'none';
+        if (preview) preview.style.display = 'block';
+
+        const stats = document.getElementById('lf-csvPreviewStats');
+        if (stats) {
+            stats.textContent = `${dataRows.length} rows found${dupeCount > 0 ? `, ${dupeCount} duplicates skipped` : ''}`;
+        }
+
+        // Show column mapping
+        const mapDiv = document.getElementById('lf-csvColumnMap');
+        if (mapDiv) {
+            const mapped = Object.entries(columnMapping).map(([idx, field]) => `${headers[idx]} → ${field}`);
+            const unmapped = headers.filter((_, idx) => !columnMapping[idx]);
+            mapDiv.innerHTML = `
+                <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:0.5rem;">
+                    <strong style="color:var(--accent-primary);">${mapped.length}</strong> columns mapped: ${mapped.join(', ')}
+                    ${unmapped.length ? `<br><span style="color:#666;">${unmapped.length} skipped: ${unmapped.join(', ')}</span>` : ''}
+                </div>`;
+        }
+
+        // Preview table
+        const thead = document.getElementById('lf-csvPreviewHead');
+        const tbody = document.getElementById('lf-csvPreviewBody');
+        if (thead && tbody) {
+            thead.innerHTML = `<tr>${['Name', 'Phone', 'Website', 'Email', 'Category', 'Address'].map(h =>
+                `<th style="padding:6px 8px;border-bottom:1px solid var(--border-light);text-align:left;font-size:0.75rem;color:var(--text-secondary);">${h}</th>`
+            ).join('')}</tr>`;
+
+            tbody.innerHTML = pendingCSVLeads.slice(0, 20).map(l => `
+                <tr>
+                    <td style="padding:5px 8px;border-bottom:1px solid var(--border-light);">${escapeHtml(l.name)}</td>
+                    <td style="padding:5px 8px;border-bottom:1px solid var(--border-light);">${escapeHtml(l.phone || '-')}</td>
+                    <td style="padding:5px 8px;border-bottom:1px solid var(--border-light);max-width:150px;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(l.website || '-')}</td>
+                    <td style="padding:5px 8px;border-bottom:1px solid var(--border-light);">${escapeHtml(l.email || '-')}</td>
+                    <td style="padding:5px 8px;border-bottom:1px solid var(--border-light);">${escapeHtml(l.category || '-')}</td>
+                    <td style="padding:5px 8px;border-bottom:1px solid var(--border-light);">${escapeHtml(l.address || '-')}</td>
+                </tr>
+            `).join('');
+
+            if (pendingCSVLeads.length > 20) {
+                tbody.innerHTML += `<tr><td colspan="6" style="padding:8px;text-align:center;color:var(--text-secondary);font-size:0.8rem;">... and ${pendingCSVLeads.length - 20} more</td></tr>`;
+            }
+        }
+
+        const countEl = document.getElementById('lf-csvImportCount');
+        if (countEl) countEl.textContent = `(${pendingCSVLeads.length})`;
+
+        // Import button handler
+        document.getElementById('lf-csvImportBtn')?.addEventListener('click', () => {
+            if (!pendingCSVLeads.length) {
+                window.CRM.showToast('No new leads to import.', 'error');
+                return;
+            }
+            for (const lead of pendingCSVLeads) {
+                store.addLead(lead);
+            }
+            window.CRM.showToast(`Imported ${pendingCSVLeads.length} leads!`, 'success');
+            pendingCSVLeads = [];
+            window.CRM.closeModal();
+            switchLeadTab('saved');
+            renderSaved();
+        });
+    };
+
+    reader.readAsText(file);
+}
+
 // ── Tab Switching ──
 
 function switchLeadTab(tab) {
@@ -1774,6 +2085,13 @@ function attachEvents() {
             return;
         }
 
+        // Import CSV button
+        if (target.id === 'lf-importCsvBtn' || target.closest('#lf-importCsvBtn')) {
+            e.preventDefault();
+            showImportCSVModal();
+            return;
+        }
+
         // Tag button on lead card
         const tagBtn = target.closest('.lf-tag-btn');
         if (tagBtn) {
@@ -1947,8 +2265,9 @@ export function render() {
                 <div class="search-field" style="flex:0; min-width: auto;">
                     <label>&nbsp;</label>
                     <div style="display:flex;gap:0.4rem;">
-                        <button class="btn btn-primary" id="lf-searchBtn">Search</button>
-                        <button class="btn btn-outline" id="lf-yelpSearchBtn" title="Search Yelp (requires Yelp API key)">Yelp</button>
+                        <button class="btn btn-primary" id="lf-yelpSearchBtn" title="Search Yelp (free, no API key required for basic)">Search</button>
+                        <button class="btn btn-outline" id="lf-searchBtn" title="Search Google Places (requires API key)">Google</button>
+                        <button class="btn btn-outline" id="lf-importCsvBtn" title="Import leads from a CSV file">Import CSV</button>
                     </div>
                 </div>
             </div>
